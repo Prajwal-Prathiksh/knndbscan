@@ -670,4 +670,3 @@ void redistribute_matrix(const int rank, const int gsize, int **pJA, float **pA,
 }
 
 
-

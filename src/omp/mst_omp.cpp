@@ -1,21 +1,9 @@
-#include <cstdlib>
-#include <iostream>
-#include <fstream>
-#include <omp.h>
-#include <assert.h>
-#include <vector>
-#include <string>
-#include <cmath>
-#include <math.h>
-#include <bits/stdc++.h>
-#include <time.h>
-#include <algorithm>
-#include "../include/globals.h"
+#include "../../include/globals.h"
 using namespace std;
 
 
 
-bool cas(Edge &e_old, const float w_old, const point_int j_new, const float w_new)
+inline bool cas(Edge &e_old, const float w_old, const point_int j_new, const float w_new)
 {
     if(e_old.w == w_old){
         e_old = {j_new, w_new};
@@ -27,7 +15,7 @@ bool cas(Edge &e_old, const float w_old, const point_int j_new, const float w_ne
 }
 
 
-void pwrite(Edge &e_old, const point_int j_new, const float w_new)
+inline void pwrite(Edge &e_old, const point_int j_new, const float w_new)
 {
     // compare and swap smaller edges
     float w_old;
@@ -39,7 +27,7 @@ void pwrite(Edge &e_old, const point_int j_new, const float w_new)
     // the second condition determines if the swap is successed.
 }
 
-void pointer_jumping(const point_int i, Edge &e1, const point_int j, vector<point_int> &cycleFlags, point_int &count)
+inline void pointer_jumping(const point_int i, Edge &e1, const point_int j, vector<point_int> &cycleFlags, point_int &count)
 {
     if(e1.j != j){
         e1.j = j;
@@ -51,7 +39,7 @@ void pointer_jumping(const point_int i, Edge &e1, const point_int j, vector<poin
 }
 
 
-void break_cycles(const vector<Cycle> cycles, vector<Edge> &minE)
+inline void break_cycles(const vector<Cycle> cycles, vector<Edge> &minE)
 {
 
     // using the similar way as forming the local branches
@@ -128,13 +116,6 @@ void break_cycles(const vector<Cycle> cycles, vector<Edge> &minE)
 
 vector<point_int> parallel_mst(const point_int N, const edge_int *IA, const point_int *JA, const float *A)
 {
-    int num_threads;
-    #pragma omp parallel
-    {
-        num_threads = omp_get_num_threads();
-    }
-    cout<< "number of threads:"<< num_threads<<endl;
-    float sentinel = 100.;
     point_int n_tree = N;
     point_int dn_tree = 1;
 
@@ -145,12 +126,8 @@ vector<point_int> parallel_mst(const point_int N, const edge_int *IA, const poin
 
     point_int count;
     vector<point_int> counts(num_threads);
-//for debug
-vector<int> n_tree_threads(num_threads);
     int istep = 0;
     point_int n_tree_old;
-    #pragma omp declare reduction (merge : vector<point_int> : omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
-    #pragma omp declare reduction (merge2 : vector<Cycle> : omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
 
 
     cout<<"   step  " << "|| n_tree " << "||  -I-   ||" << "   -II-  ||" <<"  -III-  ||"<<"  -IV-   ||"<<"   -V-   ||"<<"   -VI-  ||"<<endl;
@@ -169,7 +146,7 @@ vector<int> n_tree_threads(num_threads);
                minE[i] = {-1, sentinel};
             }
         }else{
-            #pragma omp parallel for
+            #pragma omp parallel for simd
             for(point_int p = 0; p < N; p++)
             {
                 R[p] = p;
@@ -181,21 +158,28 @@ vector<int> n_tree_threads(num_threads);
         dt[1] = t1 - t0;
  
         //phase-II: find min_edges
-        #pragma omp parallel for 
-        for(point_int p = 0; p < N; p++)
+//        #pragma code_align 64
+        #pragma omp parallel for
+        for(point_int p = 0; p<N; p++)
         {
             edge_int m = IA[p] + checked[p];
             while(m < IA[p+1]){
                 point_int q = JA[m];
-                if(R[p] != R[q]){
-                    pwrite(minE[R[p]], R[q], A[m]);
-                    break;
-                }else{
-                    checked[p] += 1;
-                    m += 1;
-                }
-            } 
-        } 
+                if(R[p] != R[q]) break;
+                checked[p] += 1;
+                m += 1;
+            }
+        }
+        #pragma omp parallel for simd
+        for(point_int p = 0; p<N; p++)
+        {
+            edge_int m = IA[p] + checked[p];
+            if(m < IA[p+1]){   
+                point_int q = JA[m];
+                pwrite(minE[R[p]], R[q], A[m]);
+            }
+        }
+ 
         t2 = omp_get_wtime();
         dt[2]= t2 - t1;
 
@@ -253,7 +237,7 @@ vector<int> n_tree_threads(num_threads);
                     pointer_jumping(p, minE[p], j, cycleFlags, counts[omp_get_thread_num()]);
                 }
             }else{
-                #pragma omp parallel for  
+                #pragma omp parallel for 
                 for(point_int c = 0; c < n_tree; c++)
                 {
                     point_int i = C[c];
@@ -265,7 +249,7 @@ vector<int> n_tree_threads(num_threads);
                         cycleFlags[i] = -1;
                         counts[omp_get_thread_num()] += 1;
                     }
-                } 
+                }
             }
             for(int t = 0; t<num_threads; t++) count += counts[t]; 
             fill(counts.begin(), counts.end(), 0);
@@ -277,7 +261,7 @@ vector<int> n_tree_threads(num_threads);
         //phase-V: break cycles
         cycles.resize(0);
         if(istep == 0){
-            #pragma omp parallel for reduction(merge2: cycles)
+            #pragma omp parallel for reduction(merge_Cycle: cycles)
             for(point_int p = 0; p < N; p++)
             {
                 if(cycleFlags[p] != -1){        
@@ -286,7 +270,7 @@ vector<int> n_tree_threads(num_threads);
             }
 
         }else{
-            #pragma omp parallel for reduction(merge2: cycles)
+            #pragma omp parallel for reduction(merge_Cycle: cycles)
             for(point_int c = 0; c<n_tree; c++)
             {
                 point_int i = C[c];
@@ -302,20 +286,17 @@ vector<int> n_tree_threads(num_threads);
         t5 =  omp_get_wtime();
         dt[5] = t5 - t4;
 
-        //phase-VI: update roots R, number of trees and clusters
-             
+        //phase-VI: update roots R, number of trees and clusters     
         n_tree_old = n_tree;
         n_tree = 0;
         C.resize(0);
-        fill(n_tree_threads.begin(), n_tree_threads.end(), 0);
-        #pragma omp parallel for reduction(merge: C)
+        #pragma omp parallel for reduction(merge_pointint: C)
         for(point_int p = 0; p < N; p++)
         {
             point_int new_root = minE[R[p]].j;
             R[p] = new_root; 
             if(new_root == p){
                 C.push_back(p);
-                n_tree_threads[omp_get_thread_num()] += 1;
             }
         }
         t6 = omp_get_wtime();
@@ -323,12 +304,6 @@ vector<int> n_tree_threads(num_threads);
     
         //check:
         n_tree = C.size();
-        int tcount = 0;
-        for(int j = 0; j < num_threads; j++) tcount += n_tree_threads[j];
-        if(n_tree != tcount){
-            cout<<"wrong tree number" << " " << istep << endl;
-            exit(12);
-        }
         dn_tree = n_tree_old - n_tree;
 
         for(int c = 1; c<7; c++) phase_time[c] += dt[c];   
