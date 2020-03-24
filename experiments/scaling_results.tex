@@ -1,0 +1,375 @@
+\title{AlgorithmTemplate}
+\documentclass[12pt]{article}
+\usepackage{fullpage}
+\usepackage{times}
+\usepackage{fancyhdr,graphicx,amsmath,amssymb}
+\usepackage[ruled,vlined]{algorithm2e}
+\include{pythonlisting}
+\usepackage{stmaryrd}
+\usepackage{tikzscale}
+\usepackage{latexsym}
+\usepackage{numprint}
+\usepackage{url}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{lineno,hyperref,amsmath,amssymb,amsthm,mathtools}
+\usepackage{hyperref}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{tikz}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{csquotes}
+\usepackage[noend]{algpseudocode}
+\usepackage[ruled,vlined]{algorithm2e}
+\usepackage{setspace}
+\newtheorem{theorem}{Theorem}[section]
+\usetikzlibrary{positioning}
+\usetikzlibrary{arrows.meta}
+\usepackage{esint}
+\usepackage{siunitx}
+%\usepackage{tabularx, multirow, booktabs}
+\usepackage[T1]{fontenc}
+\usepackage{titlesec}
+\usetikzlibrary{shapes,snakes}
+\usetikzlibrary{automata,shapes.geometric}
+\usepackage{array}
+\usepackage[font=footnotesize, labelfont=bf]{caption}
+\newcolumntype{P}[1]{>{\centering\arraybackslash}p{#1}}
+\usepackage{lipsum}
+\makeatletter
+\renewcommand\subparagraph{%
+\@startsection{subparagraph}{5}{0pt}%
+{3.25ex \@plus 1ex \@minus .2ex}{-1em}%
+{\normalfont\normalsize\mdseries\itshape}}
+\makeatother
+\titlespacing*{\subsection}
+{0pt}{3ex plus 1ex minus .2ex}{3ex plus .2ex}
+\SetArgSty{textnormal}
+\usepackage[LGRgreek]{mathastext}
+\title{}
+\DeclareMathSymbol{\mh}{\mathord}{operators}{`\-}
+\newcommand\mycommfont[1]{\ttfamily\textcolor{blue}{#1}}
+\SetCommentSty{mycommfont}
+\SetKwRepeat{Do}{do}{while}
+\usepackage{pgfplots}
+\pgfplotsset{width=5cm,compat=1.3,
+	table/search path={plots},
+}
+\pgfplotsset{grid style={dashed,black}}
+\pgfplotsset{major grid style={dotted,black}}
+\usetikzlibrary[pgfplots.groupplots,calc]
+\usepackage[title]{appendix}
+
+%\usepackage {xcolor}
+\definecolor {processblue}{cmyk}{0.96,0,0,0}
+\definecolor{red1}{RGB}{170,68,153}
+\definecolor{red2}{RGB}{204,102,153}
+\definecolor{red3}{RGB}{230, 25, 75}
+\definecolor{green1}{RGB}{68,170,153}
+\definecolor{green2}{RGB}{17,119,51}
+\definecolor{green3}{RGB}{191, 239, 69}
+\definecolor{blue1}{RGB}{136,204,238}
+\definecolor{blue2}{RGB}{102, 153, 204}
+\definecolor{yellow}{RGB}{221, 204, 119}
+\definecolor{yellow1}{RGB}{255, 225, 25}
+\usepackage{siunitx}
+\newcommand{\sn}[2]{\ensuremath{{#1}\times 10^{#2}}}
+
+\begin{document} 
+%\maketitle
+\paragraph{\large{Scaling Results of Parallel knnDBSCAN}}
+
+\paragraph{$\bullet$ Notation of wall clock time for different phases:}
+    \begin{itemize}
+        \item $T_{local}$: time for local mst construction (shared memory model used in each process, no communication involved).
+        \item $T_{global}$: time for global approximate mst construction.
+        \item $T_{total}$: $T_{local}+T_{global}$.
+    \end{itemize}
+\paragraph{$\bullet$ Notation for number of cross edges:}
+        \begin{itemize}
+        \item $\# E_{max}$: maximum number of cross edges of all processes.
+        \item $\# E_{min}$: minimum number of cross edges of all processes.
+        \item $\# E_{avg}$: averaged number of cross edges of all processes.
+    \end{itemize}
+    
+\paragraph{$\bullet$ Settings for tests:}
+    \begin{itemize}
+        \item nodes number: for a given test with \textcolor{red}{p} processes, the number of nodes used in Frontera is set as \textcolor{red}{p/2} .
+        \item threads number: $OMP\_NUM\_THREADS$ = \textcolor{red}{28} for all tests .
+    \end{itemize}
+\clearpage
+
+%%%%%%%%%3D
+\paragraph{$\bullet$ Experiment 1: three dimensional data sets}
+$ $\newline
+$ $\newline
+\indent The points are generated from three dimensional sphere surfaces. 100 nearest neighbors are considered.
+$ $\newline
+\renewcommand{\arraystretch}{1.7}
+\begin{table}[h]
+\centering
+    \caption{\textbf{Strong scaling results of 3D data sets with 2 million points.} }
+	\label{2M3D}
+\begin{tabular}{ccccccc}
+    \hline %
+\# processes  &$\# E_{max}$   &$\# E_{min}$ &$\# E_{avg}$  &$T_{local}$  &$T_{global}$  &$T_{total}$\\
+\hline\hline
+1  &0  &0  &0  &2.46E-1   &2.04E-2   &2.56E-1 \\
+2  &0  &0  &0   &7.86E-2 &6.18E-3  &8.48E-2 \\
+4   &2.477E+7   &2.152E+7   &2.345E+7  &3.94E-1   &6.92E-1 &2.09E0 \\
+8  &2.857E+7   &2.677E+7   &2.813E+7   &2.85E-1   &4.87E-1 &7.72E-1 \\
+16 &2.084E+7   &2.038E+7   &2.070E+7   &2.68E-1   &2.87E-1  &4.55E-1 \\
+32  &5.804E+6   &5.690E+6   &5.769E+6   &2.00E-1   &2.65E-1 &2.65E-1 \\
+64   &2.999E+6   &2.969E+6   &2.989E+6  &6.76E-2   &2.42E-1 &2.10E-1 \\
+\hline
+    \end{tabular}
+\end{table}
+
+\renewcommand{\arraystretch}{1.7}
+\begin{table}[h]
+\centering
+    \caption{\textbf{Weak scaling results of 3D data sets.} }
+	\label{3Dweak}
+\begin{tabular}{cccccccc}
+    \hline %
+\# points &\# processes  &$\# E_{max}$   &$\# E_{min}$ &$\# E_{avg}$  &$T_{local}$  &$T_{global}$  &$T_{total}$\\
+\hline\hline
+2 million &8 &1.86E+7    &1.68E+07    &1.81E+07    &2.85E-1    &4.87E-1    &7.72E-1\\
+4 million &16  &2.167E+7   &2.076E+7   &2.141E+7  &3.35E-1   &5.58E-1 &8.93E-1\\
+8 million &32  &2.322E+7   &2.271E+7   &2.307E+7  &3.92E-1   &5.98E-1 &9.90E-1 \\
+16 million &64  &2.399E+7   &2.372E+7   &2.391E+7  &4.75E-1   &9.23E-1 &1.40E+0\\
+\hline
+    \end{tabular}
+\end{table}
+
+\begin{figure}[h]
+\begin{tikzpicture}
+\centering
+  \begin{groupplot}[
+  	    small,
+      group style={
+        group name=test,
+        group size=2 by 1,
+        vertical sep=2.5cm,
+        horizontal sep=2.5cm
+      },
+      scale only axis,
+      width = 0.3*\textwidth,
+      height = 4cm,
+    ]
+
+\nextgroupplot[legend cell align={right},
+   					legend style={at={(axis cs:1,15)},nodes={scale=1.2, transform shape},anchor=south west, draw = none,line width=1.0pt,legend columns=3},
+      ymin = 1.e-3, ymax = 10,
+      ymode = log,
+      log basis y = {10},
+      xmode = log,
+      log basis x = {10},
+      xmin = 1, xmax = 100,
+      minor x tick num=5,
+    xlabel=\# processes,
+ylabel=time (s),
+xlabel near ticks, ylabel near ticks,
+grid = major]
+    \addplot[blue,thick,mark=o] table [x=n ,y=t1]
+{2M_3d.txt};
+    \addplot[black,thick,mark= square*] table [x=n,y=t2]
+{2M_3d.txt};
+    \addplot[red,thick,mark= diamond*, mark options={solid}] table [x=n,y=t3]
+{2M_3d.txt};
+
+            \addlegendimage{/pgfplots/refstyle=plot_one}
+            \addlegendentry{$T_{local}$}
+            \addlegendentry{$T_{global}$}
+            \addlegendentry{$T_{total}$}
+
+\nextgroupplot[legend cell align={right},
+   					legend style={at={(axis cs:1,15)},nodes={scale=1.2, transform shape},anchor=south west, draw = none,line width=1.0pt,legend columns=3},
+      ymin = 1.e-1, ymax = 10,
+      ymode = log,
+      log basis y = {10},
+    xlabel=\# points (million),
+ylabel=time (s),
+xlabel near ticks, ylabel near ticks,
+grid = major]
+    \addplot[blue,thick,mark=o] table [x=n ,y=t1]
+{weak_3d.txt};
+    \addplot[black,thick,mark= square*] table [x=n,y=t2]
+{weak_3d.txt};
+    \addplot[red,thick,mark= diamond*, mark options={solid}] table [x=n,y=t3]
+{weak_3d.txt};
+
+            \addlegendimage{/pgfplots/refstyle=plot_one}
+            \addlegendentry{$T_{local}$}
+            \addlegendentry{$T_{global}$}
+            \addlegendentry{$T_{total}$}
+
+            
+  \end{groupplot}
+	\end{tikzpicture}
+	\caption{\textbf{Strong scaling (left) and weak scaling (right) results of 3D data sets}.}
+	\label{3D}
+\end{figure}
+\clearpage
+
+
+%%%%%%%%5D
+\paragraph{$\bullet$ Experiment 2: five dimensional data sets}
+$ $\newline
+$ $\newline
+\indent The points are generated from five dimensional sphere surfaces. 100 nearest neighbors are considered.
+$ $\newline
+\renewcommand{\arraystretch}{1.7}
+\begin{table}[h]
+\centering
+    \caption{\textbf{Strong scaling results of 5D data sets with 2 million points.} }
+	\label{2M5D}
+\begin{tabular}{ccccccc}
+    \hline %
+\# processes  &$\# E_{max}$   &$\# E_{min}$ &$\# E_{avg}$  &$T_{local}$  &$T_{global}$  &$T_{total}$\\
+\hline\hline
+1   &0   &0     &0   &1.58E-1    &1.20E-2    &1.70E-1 \\
+2   &9.92E+6    &9.91E+6    &9.91E+6    &2.29E-1    &2.62E-1    &4.91E-1\\
+4   &1.73E+7    &7.23E+6    &1.22E+7    &2.55E-1    &4.70E-1    &7.25E-1\\
+8   &1.67E+7    &8.99E+6    &1.23E+7    &2.73E-1    &4.35E-1    &7.08E-1\\
+16  &1.04E+7    &8.43E+6    &8.88E+6    &1.45E-1    &2.65E-1    &4.10E-1\\
+32  &5.69E+6    &5.18E+6    &5.27E+6    &8.73E-2    &1.65E-1    &2.52E-1\\
+64  &2.97E+6    &2.81E+6    &2.86E+6    &5.81E-2    &1.19E-1    &1.77E-1\\
+\hline
+    \end{tabular}
+\end{table}
+
+\renewcommand{\arraystretch}{1.7}
+\begin{table}[h]
+\centering
+    \caption{\textbf{Weak scaling results of 5D data sets.} }
+	\label{5Dweak}
+\begin{tabular}{cccccccc}
+    \hline %
+\# points &\# processes  &$\# E_{max}$   &$\# E_{min}$ &$\# E_{avg}$  &$T_{local}$  &$T_{global}$  &$T_{total}$\\
+\hline\hline
+2 million  &8   &1.67E+7    &8.99E+6    &1.23E+7    &2.73E-1    &4.35E-1    &7.08E-1\\
+4 million  &16  &2.08E+7    &1.67E+7    &1.77E+7    &2.98E-1    &5.43E-1    &8.41E-1\\
+8 million  &32  &2.28E+7    &2.03E+7    &2.10E+7    &3.61E-1    &6.40E-1    &1.00E+0\\
+16 million &64  &2.38E+7    &2.24E+7    &2.29E+7    &4.45E-1    &7.28E-1    &1.17E+0\\
+
+
+
+\hline
+    \end{tabular}
+\end{table}
+
+\begin{figure}[h]
+\begin{tikzpicture}
+\centering
+  \begin{groupplot}[
+  	    small,
+      group style={
+        group name=test,
+        group size=2 by 1,
+        vertical sep=2.5cm,
+        horizontal sep=2.5cm
+      },
+      scale only axis,
+      width = 0.3*\textwidth,
+      height = 4cm,
+    ]
+
+\nextgroupplot[legend cell align={right},
+   					legend style={at={(axis cs:1,15)},nodes={scale=1.2, transform shape},anchor=south west, draw = none,line width=1.0pt,legend columns=3},
+      ymin = 1.e-3, ymax = 10,
+      ymode = log,
+      log basis y = {10},
+      xmode = log,
+      log basis x = {10},
+      xmin = 1, xmax = 100,
+      minor x tick num=5,
+    xlabel=\# processes,
+ylabel=time (s),
+xlabel near ticks, ylabel near ticks,
+grid = major]
+    \addplot[blue,thick,mark=o] table [x=n ,y=t1]
+{2M_5d.txt};
+    \addplot[black,thick,mark= square*] table [x=n,y=t2]
+{2M_5d.txt};
+    \addplot[red,thick,mark= diamond*, mark options={solid}] table [x=n,y=t3]
+{2M_5d.txt};
+
+            \addlegendimage{/pgfplots/refstyle=plot_one}
+            \addlegendentry{$T_{local}$}
+            \addlegendentry{$T_{global}$}
+            \addlegendentry{$T_{total}$}
+
+\nextgroupplot[legend cell align={right},
+   					legend style={at={(axis cs:1,15)},nodes={scale=1.2, transform shape},anchor=south west, draw = none,line width=1.0pt,legend columns=3},
+      ymin = 1.e-1, ymax = 10,
+      ymode = log,
+      log basis y = {10},
+    xlabel=\# points (million),
+ylabel=time (s),
+xlabel near ticks, ylabel near ticks,
+grid = major]
+    \addplot[blue,thick,mark=o] table [x=n ,y=t1]
+{weak_5d.txt};
+    \addplot[black,thick,mark= square*] table [x=n,y=t2]
+{weak_5d.txt};
+    \addplot[red,thick,mark= diamond*, mark options={solid}] table [x=n,y=t3]
+{weak_5d.txt};
+
+            \addlegendimage{/pgfplots/refstyle=plot_one}
+            \addlegendentry{$T_{local}$}
+            \addlegendentry{$T_{global}$}
+            \addlegendentry{$T_{total}$}
+
+            
+  \end{groupplot}
+	\end{tikzpicture}
+	\caption{\textbf{Strong scaling (left) and weak scaling (right) results of 5D data sets}.}
+	\label{5D}
+\end{figure}
+
+
+\clearpage
+\paragraph{\large{Parallel exact MST algorithm (idea)}}
+\paragraph{$\bullet$ Notation of edges}
+    \begin{itemize}
+        \item $E_{input}$: union of all edges of the input graph).
+        \item $E_{mst,local}$: union of edges after local MST search (i.e. each edge should be an internal edge belong to a process).
+        \item $E_{cross}$: union of cross edges of all processes.
+        \item $E_{mst,approx}$: the union of approximate MST edges.
+        \item $E_{mst,exact}$: the union of exact MST edges.
+    \end{itemize}
+
+
+1. We can conclude the approximate MST algorithm in the following two steps
+\begin{algorithm}[!h]
+%\small
+	\DontPrintSemicolon
+	%$\rhd \,construct\;sets\;based\;on\;fracture\;connections\;in\;coars\;matrix\;I$\;
+    Output: $E_{mst,approx}$  \\
+        \nl R, $E_{mst,local}$ = local\_mst($E_{input}$)\\
+        \nl  $E_{mst,cross}$ = global\_mst($E_{cross}, R$)\\
+        \nl $E_{mst,approx} = E_{mst,local} \bigcup E_{mst,cross}$
+	\caption{Approximate\_MST($E_{input}$)}
+	\label{approxmst}
+\end{algorithm}
+
+
+\begin{theorem}
+\label{exact_mst}
+$E_{mst,exact}\subset \{ E_{mst,local} \bigcup E_{cross}\}$ 
+\end{theorem}
+
+2. Using this theorem, we have the following parallel distributed memory algorithm for searching exact MST:
+\begin{algorithm}[!h]
+%\small
+	\DontPrintSemicolon
+	%$\rhd \,construct\;sets\;based\;on\;fracture\;connections\;in\;coars\;matrix\;I$\;
+    Output: $E_{mst,exact}$  \\
+        \nl R, $E_{mst,local}$ = local\_mst($E_{input}$)\\ \quad \textcolor{blue}{/*  the same as the approximate mst algo */}\\
+        \nl $E_{mst,exact}$ = global\_mst($\{ E_{mst,local} \bigcup E_{cross}\}, R$) \qquad \qquad\textcolor{blue}{/*  difference */}\\
+	\caption{Exact\_MST($E_{input}$)}
+	\label{exactmst}
+\end{algorithm}
+
+\end{document}
