@@ -99,8 +99,87 @@
     \end{itemize}
 \clearpage
 
+%%%%%%%%16M
+\paragraph{$\bullet$ Experiment 1: strong scaling results of 16 million points in five dimension}
+$ $\newline
+$ $\newline
+\indent The points are generated from five dimensional sphere surfaces. 100 nearest neighbors are considered.
+$ $\newline
+\renewcommand{\arraystretch}{1.7}
+\begin{table}[h]
+\centering
+    \caption{\textbf{Strong scaling results of 16 million points in five dimension.} }
+    \label{16M5D}
+\begin{tabular}{ccccccc}
+    \hline %
+\# processes  &$\# E_{max}$   &$\# E_{min}$ &$\# E_{avg}$  &$T_{local}$  &$T_{global}$  &$T_{total}$\\
+\hline\hline
+1 &0 &0 &0 &2.25E+0 &8.02E-2    &2.33E+0\\
+2  &7.937E+7   &7.936E+7   &7.936E+7 &1.87E+0   &2.16E+0    &4.03E+0\\
+4  &1.389E+8   &5.609E+7   &9.718E+7 &2.16E+0   &3.75E+0    &5.91E+0\\
+8  &1.337E+8   &7.160E+7   &9.824E+7 &2.19E+0   &3.51E+0    &5.70E+0\\
+16  &8.302E+7   &6.665E+7   &7.085E+7 &1.18E+0  &2.11E+0    &3.29E+0\\
+32  &4.551E+7   &4.062E+7   &4.208E+7 &7.93E-1  &1.30E+0    &2.09E+0\\
+64  &2.38E+7    &2.24E+7    &2.29E+7    &4.45E-1    &7.28E-1    &1.17E+0\\
+128 &1.213E+7   &1.177E+7   &1.189E+7  &3.96E-1 &6.59E-1    &1.06E+0\\
+256  &6.126E+6   &6.036E+6   &6.067E+6 &5.97E-1 &5.24E-1    &1.12E+0\\
+\hline
+    \end{tabular}
+\end{table}
+
+
+\begin{figure}[h]
+\begin{tikzpicture}
+\centering
+  \begin{groupplot}[
+        small,
+      group style={
+        group name=test,
+        group size=1 by 1,
+        vertical sep=2.5cm,
+        horizontal sep=2.5cm
+      },
+      scale only axis,
+      width = 0.3*\textwidth,
+      height = 4cm,
+    ]
+
+\nextgroupplot[legend cell align={right},
+                    legend style={at={(axis cs:1000,15)},nodes={scale=1.2, transform shape},anchor=south west, draw = none,line width=1.0pt,legend columns=3},
+      ymin = 1.e-2, ymax = 100,
+      ymode = log,
+      log basis y = {10},
+      xmode = log,
+      log basis x = {10},
+      xmin = 1, xmax = 1000,
+      minor x tick num=5,
+    xlabel=\# processes,
+ylabel=time (s),
+xlabel near ticks, ylabel near ticks,
+grid = major]
+    \addplot[blue,thick,mark=o] table [x=n ,y=t1]
+{16M_5d.txt};
+    \addplot[black,thick,mark= square*] table [x=n,y=t2]
+{16M_5d.txt};
+    \addplot[red,thick,mark= diamond*, mark options={solid}] table [x=n,y=t3]
+{16M_5d.txt};
+
+            \addlegendimage{/pgfplots/refstyle=plot_one}
+            \addlegendentry{$T_{local}$}
+            \addlegendentry{$T_{global}$}
+            \addlegendentry{$T_{total}$}
+
+  \end{groupplot}
+    \end{tikzpicture}
+    \caption{\textbf{Strong scaling results of 16 million points in five dimension}.}
+    \label{5D16}
+\end{figure}
+\clearpage
+
+
+
 %%%%%%%%%3D
-\paragraph{$\bullet$ Experiment 1: three dimensional data sets}
+\paragraph{$\bullet$ Experiment 2: three dimensional data sets}
 $ $\newline
 $ $\newline
 \indent The points are generated from three dimensional sphere surfaces. 100 nearest neighbors are considered.
@@ -214,7 +293,7 @@ grid = major]
 
 
 %%%%%%%%5D
-\paragraph{$\bullet$ Experiment 2: five dimensional data sets}
+\paragraph{$\bullet$ Experiment 3: five dimensional data sets}
 $ $\newline
 $ $\newline
 \indent The points are generated from five dimensional sphere surfaces. 100 nearest neighbors are considered.
