@@ -17,8 +17,6 @@
 #include <map>
 #include <iterator>
 
-
-
 using namespace std;
 extern int maxk;
 extern int minPts;
@@ -30,12 +28,13 @@ extern vector<int> ilabels;
 extern vector<int> jlabels;
 extern vector<int> II;
 extern vector<int> JJ;
+
 typedef int point_int; // number of points
 
 typedef long long int edge_int; // number of edges
 
 struct Edge{
-    point_int j; 
+    point_int j;
     float w;
 };
 
@@ -49,6 +48,7 @@ struct Cycle{
     point_int i;
     point_int j;
 };
+
 #pragma omp declare reduction(vec_plus : vector<int> : \
                               transform(omp_out.begin(), omp_out.end(), omp_in.begin(), omp_out.begin(), plus<int>())) \
                     initializer(omp_priv = decltype(omp_orig)(omp_orig.size()))

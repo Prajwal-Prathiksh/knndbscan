@@ -25,7 +25,6 @@ vector<point_int> knndbscan(const point_int N, const float eps_value, const int 
     minPts = minPts_value;
     maxk = maxk_value;
     eps = eps_value;
-    
     #pragma omp parallel
     {
         num_threads = omp_get_num_threads();
@@ -33,10 +32,9 @@ vector<point_int> knndbscan(const point_int N, const float eps_value, const int 
     point_int n0, n, ISTART;
     count_points(rank, N, n0, n, ISTART);
     sentinel = 100.;
-
     //I: determine core/non-core points
     vector<point_int> R(n);
-    vector<point_int> core;    
+    vector<point_int> core;
     #pragma omp parallel for reduction(merge_pointint: core)
     for(point_int p = 0; p < n; p++)
     {
@@ -57,51 +55,35 @@ vector<point_int> knndbscan(const point_int N, const float eps_value, const int 
     vector<edge_int> crossE;
     n_tree = dbscan_omp(n, ISTART, JA, A, R, C, core, crossE);
     int nE = crossE.size();
+    
     //III: relabel local roots: label, ilabels;
     vector<point_int> n_trees(gsize);
-    map<point_int, int> label;    
+    map<point_int, int> label;
     MPI_Allgather(&n_tree, 1, MPI_INT, &n_trees[0], 1, MPI_INT, MPI_COMM_WORLD);
-    int n_start, n_ALLtrees;    
+    int n_start, n_ALLtrees;
     label_subtrees(rank, n_tree, n_trees, C, n_start, n_ALLtrees, label);
-
     //IV: sort cross core edges
-    sort_core_edges(n0, ISTART, R, label, JA, A, crossE); 
-
+    sort_core_edges(n0, ISTART, R, label, JA, A, crossE);
     //V: construct global mst: R
     vector<int> roots;
-    roots = global_mst(n_ALLtrees, n_tree, crossE, A);   
+    roots = global_mst(n_ALLtrees, n_tree, crossE, A);
 
-    map<int, int>::iterator itr; 
+    map<int, int>::iterator itr;
     point_int u;
     int v;
     for(itr = label.begin(); itr !=  label.end(); ++itr){
         u = itr->first;
         v = itr->second;
         label[u] = roots[v-n_start];
-    } 
+    }
     for(point_int p = 0; p < n; p++){
         u = R[p];
         if(u != -1) R[p] = label[u];
     }
-
     //VI: mark border points
     label_borders(n0, n, ISTART, R, JA, A);
-
-    //summary
-    vector<int> nEs(gsize);
-    MPI_Allgather(&nE, 1, MPI_INT, &nEs[0], 1, MPI_INT, MPI_COMM_WORLD);
-    edge_int total_nE = nEs[0];
-    edge_int max_nE = nEs[0];
-    edge_int min_nE = nEs[0];
-    for(int l = 1; l<gsize; l++){
-        if(nEs[l] < min_nE) min_nE = nEs[l];
-        if(nEs[l] > max_nE) max_nE = nEs[l];
-        total_nE += nEs[l];
-    }
-    double avg_nE = (double)total_nE/(double)gsize;
     return R;
 }
-
 
 
 

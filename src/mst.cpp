@@ -1,6 +1,39 @@
 #include "../include/globals.h"
 using namespace std;
+inline int find_parent(const int i)
+{
+    int parent = -1;
+    int k = 0;
+    while(parent < 0){
+        if((ilabels[k] <= i) and (i < ilabels[k+1])) parent = k;
+        k += 1;
+    }
+    return parent;
+}
 
+inline bool cas_2(Edge &e_old, const float w_old, const point_int j_new, const float w_new)
+{
+    if(e_old.w == w_old){
+        e_old = {j_new, w_new};
+        return true; //swap success, and terminate write
+    }else{
+        return false; //swap failed, need to check if it is still necessary for swap
+    }
+
+}
+
+
+inline void pwrite_2(Edge &e_old, const point_int j_new, const float w_new)
+{
+    // compare and swap smaller edges
+    float w_old;
+    do {
+        w_old = e_old.w;
+    }
+    while ((w_new < w_old) and (cas_2(e_old, w_old, j_new, w_new)));
+    // the first condition determines if it is necessary to swap
+    // the second condition determines if the swap is successed.
+}
 
 void minimum_edges(MPI_Datatype Edgetype, const vector<int> C, const vector<int> C_local, const vector<Edge> minE, map<int, int> &best)
 {
@@ -57,7 +90,6 @@ void minimum_edges(MPI_Datatype Edgetype, const vector<int> C, const vector<int>
     }
     rbuf.resize(k);
     MPI_Alltoallv(&sbuf[0], scounts, sdispls, Edgetype, &rbuf[0], rcounts, rdispls, Edgetype, MPI_COMM_WORLD);
-MPI_Barrier(MPI_COMM_WORLD);
 
     //compare and sort
     int n_local = C_local.size();
@@ -88,7 +120,7 @@ inline void prepare_send(const int nsend, int* sdispls, const map<int, int> best
     to_check.resize(nsend);
     sbuf.resize(nsend);
     vector<int> counts(gsize, 0);
-    #pragma omp parallel for reduction(vec_plus:counts)
+    //#pragma omp parallel for reduction(vec_plus:counts)
     for(int l = 0; l < nsend; l++)
     {
         int i = pre_check[l];
@@ -119,7 +151,6 @@ inline void alltoall_update(int* scounts, int* sdispls, vector<int> &sbuf, const
     MPI_Alltoallv(&sbuf[0], scounts, sdispls, MPI_INT, &rbuf[0], rcounts, rdispls, MPI_INT, MPI_COMM_WORLD);
 
     //update and 2nd all to all to send back new pointer
-    int j;
     #pragma omp parallel for
     for(int l = 0; l< k; l++)
     {
@@ -290,51 +321,30 @@ int update_roots(const map<int, int> best, vector<int> &C, vector<int> &C_local,
         i = roots[l];
         roots[l] = C_root[i];
     }
+    //recover roots
+    int* rcounts = new int[gsize];
+    int* rdispls = new int[gsize];
+    int n_root = roots.size();
+    fill(counts.begin(), counts.end(),0);
+    MPI_Allgather(&n_root, 1, MPI_INT, &counts[0], 1, MPI_INT, MPI_COMM_WORLD);
+    int n_allroot = 0;
+    for(int l = 0; l<gsize; l++){
+        n_allroot += counts[l];
+        rcounts[l] = counts[l];
+        rdispls[l] = (l==0) ? 0:rdispls[l-1] + rcounts[l-1];
+    }
 
-    //2. update edges
+    vector<int> all_roots(n_allroot);
+    MPI_Allgatherv(&roots[0], n_root, MPI_INT, &all_roots[0], rcounts, rdispls, MPI_INT, MPI_COMM_WORLD);
+
+    //update edges
     int nE = crossE.size();
-    //sbuf.resize(nE);
-    ordering.resize(nE);
-    fill(counts.begin(), counts.end(), 0); 
-    #pragma omp parallel for reduction(vec_plus: counts)
-    for(int l = 0; l <nE; l++){
-        if(crossE[l] >= 0){
-            int j = JJ[l];
-            int k = jlabels[j];
-            counts[k] += 1;
-        }
-    }      
-
-    k = 0; 
-    for (int l = 0; l<gsize; l++){
-        sdispls[l] = (l==0) ? 0:sdispls[l-1] + scounts[l-1];
-        scounts[l] = counts[l];
-        k += counts[l];
-    }
-    sbuf.resize(k);
-    fill(counts.begin(), counts.end(), 0);
-    for(int l = 0; l < nE; l++)
-    {
-        if(crossE[l] >= 0){
-            j = JJ[l];
-            k = jlabels[j];
-            pointer = sdispls[k] + counts[k];
-            sbuf[pointer] = j;
-            ordering[l] = pointer;
-            counts[k] += 1;
-        }
-    }
-
-    alltoall_update(scounts, sdispls, sbuf, best);
-
-    int counter = 0;
-    #pragma omp parallel for 
+    #pragma omp parallel for
     for(int l = 0; l<nE; l++)
     {
         if(crossE[l] >= 0){
-            int i = C_root[II[l]];
-            int pointer = ordering[l];
-            int j = sbuf[pointer];
+            int i = all_roots[II[l]];
+            int j = all_roots[JJ[l]];
             if(i != j){
                 II[l] = i;
                 JJ[l] = j;
@@ -386,24 +396,11 @@ void relabel(const vector<int> C_local, vector<int> &roots)
 
 
 }
-inline int find_parent(const int i)
-{
-    int parent = -1;
-    int k = 0;
-    while(parent < 0){
-        if((ilabels[k] <= i) and (i < ilabels[k+1])) parent = k;
-        k += 1;
-    }
-    return parent;
-}
+
 
 void sort_core_edges(point_int n0, point_int ISTART, const vector<point_int> R, const map<point_int, int> label, const point_int *JA, const float *A, vector<edge_int> &crossE)
 {
 
-
-MPI_Barrier(MPI_COMM_WORLD);
-double t0 = MPI_Wtime();
- 
     vector<point_int> sbuf, rbuf, ordering;
     int* scounts = new int[gsize];
     int* sdispls = new int[gsize];
@@ -416,31 +413,54 @@ double t0 = MPI_Wtime();
     II.resize(nE);
     JJ.resize(nE);
     //prepare send
-    vector<int> counts(gsize, 0); 
-    #pragma omp parallel for reduction(vec_plus: counts)
-    for(int l = 0; l< nE;l++){
+    int backets = num_threads * gsize;
+    vector<int> counts(backets, 0);
+    #pragma omp parallel
+    {
+       int tid = omp_get_thread_num();
+    #pragma omp for schedule(static)
+    for (int l=0; l<nE; l++){
         edge_int e = crossE[l];
         int i = floor((double)e/(double)maxk);
         int j = JA[e];
-        int k = floor((double)j/(double)n0); 
+        int k = floor((double)j/(double)n0);
         II[l] = label.at(R[i]);
-        counts[k] += 1;
+        int kk = k*num_threads+tid;
+        counts[kk] += 1;
     }
+    }
+
+    vector<int> displs(backets, 0);
+    int counter = 0;
+    int position;
     for (int l = 0; l<gsize; l++){
          sdispls[l] = (l==0) ? 0:sdispls[l-1] + scounts[l-1];
-         scounts[l] = counts[l];
+         scounts[l] = 0;
+         for(int m = 0; m<num_threads; m++){
+            position = l*num_threads + m;
+            displs[position] = counter;
+            scounts[l] += counts[position];
+            counter += counts[position];
+         }
     }
     sbuf.resize(nE);
     ordering.resize(nE);
-    fill(counts.begin(), counts.end(), 0); 
+    fill(counts.begin(), counts.end(), 0);
+    #pragma omp parallel
+    {
+       int tid = omp_get_thread_num();
+    #pragma omp for schedule(static)
     for(int l =0; l<nE; l++){
-        j = JA[crossE[l]];
-        k = floor((double)j/(double)n0); 
-        pointer = sdispls[k]+counts[k];
+        int j = JA[crossE[l]];
+        int k = floor((double)j/(double)n0);
+        int kk = k*num_threads+tid;
+        int pointer = displs[kk]+counts[kk];
         sbuf[pointer] = j;
         ordering[l] = pointer;
-        counts[k] += 1;
+        counts[kk] += 1;
     }
+    }
+
 
     //1st all to all
     MPI_Alltoall(scounts, 1, MPI_INT, rcounts, 1, MPI_INT, MPI_COMM_WORLD);
@@ -660,7 +680,6 @@ vector<int> global_mst(const int n_ALLtrees, int &n_local, vector<edge_int> &cro
 
     int istep = 0;
     float w;
-    if(rank==0)   cout<<"mst for cross edges"<<endl;
     while(dn_tree > 0){
         //phase-I: initialization
         best.clear(); // \forall i\ in C_local
@@ -677,7 +696,7 @@ vector<int> global_mst(const int n_ALLtrees, int &n_local, vector<edge_int> &cro
             edge_int e = crossE[l];
             if(e >= 0){
                 int i = II[l];
-                pwrite(minE[i], JJ[l], A[e]);
+                pwrite_2(minE[i], JJ[l], A[e]);
             }
         }
         //phase-III: send min edges and sort globals min edges: get best
@@ -692,10 +711,11 @@ vector<int> global_mst(const int n_ALLtrees, int &n_local, vector<edge_int> &cro
         //phase-V: pointer-jumping: update best until roots found
         find_roots(C_local, best);
         //phase-VI: update: C, C_local, roots, crossE;
-        MPI_Barrier(MPI_COMM_WORLD);
         n_tree_old = n_tree;
         n_tree = update_roots(best, C, C_local, roots, crossE);
-        dn_tree = n_tree_old - n_tree;
+        int dn_tree_local = n_tree_old - n_tree;
+        dn_tree = countall(dn_tree_local);
+
         n_local = C.size();
         istep += 1;
     }

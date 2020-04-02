@@ -27,6 +27,9 @@ inline void pwrite(Edge &e_old, const point_int j_new, const float w_new)
     // the second condition determines if the swap is successed.
 }
 
+
+
+
 inline void pointer_jumping(const point_int i, Edge &e1, const point_int j, vector<point_int> &cycleFlags, point_int &count)
 {
     if(e1.j != j){

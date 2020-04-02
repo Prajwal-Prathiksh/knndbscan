@@ -2,7 +2,7 @@
 #include "mst_omp.cpp"
 using namespace std;
 
-int dbscan_omp(const point_int N, const point_int ISTART, const point_int *JA, const float *A, vector<point_int> &R, vector<point_int> &C, const vector<point_int> core, vector<edge_int> &crossE)
+int dbscan_omp(const point_int N, const point_int *JA, const float *A, vector<point_int> &R, vector<point_int> &C, const vector<point_int> core, vector<edge_int> &crossE)
 {
 int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -19,9 +19,7 @@ int rank;
     vector<point_int> counts(num_threads);
     int istep = 0;
     point_int n_tree_old;
-
     while(dn_tree > 0){
-
         //phase-I: initialization
         #pragma omp parallel for
         for(point_int c = 0; c < n_tree; c++)
@@ -29,7 +27,6 @@ int rank;
            point_int i = C[c];
            minE[i] = {-1, sentinel};
         }
-
         //phase-II: find min_edges
         #pragma code_align 32
         #pragma omp parallel for reduction(merge_edgeint: crossE)
@@ -58,16 +55,15 @@ int rank;
         {
             point_int i = C[c];
             point_int j = minE[i].j;
-            if(j == -1){
+            if(j == -1){ // a sink node, no outer edges: a root at this itertaion
                 minE[i].j = i;
             }else{
                 point_int k = minE[j].j;
-                if((i == k) and (i < j)){
+                if((i == k) and (i < j)){ // an edge shared as minimum by two nodes, choose the one with smaller index as a root.
                     minE[i].j = i;
                 }
             }
         }
-
         //phase-IV: pointer jumping
         #pragma omp parallel for
         for(point_int c = 0; c < n_tree; c++)
@@ -95,7 +91,6 @@ int rank;
             for(int t = 0; t<num_threads; t++) count += counts[t];
             fill(counts.begin(), counts.end(), 0);
         }
-
         //phase-V: break cycles
         cycles.resize(0);
         #pragma omp parallel for reduction(merge_Cycle: cycles)
@@ -107,9 +102,9 @@ int rank;
             }
         }
         if(cycles.size() > 0){
+            cout<< "cycle detected"<<endl;
             break_cycles(cycles, minE);
         }
-
         //phase-VI: update roots R, number of trees and clusters
         n_tree_old = n_tree;
         n_tree = 0;
@@ -124,14 +119,13 @@ int rank;
                 C.push_back(i);
             }
         }
-//cout<<rank << "-"<<istep << "tt"<<endl;
         //check:
         n_tree = C.size();
         dn_tree = n_tree_old - n_tree;
         if(rank == 0) cout<<"rank0:" << istep<<"-"<<n_tree<<endl;
         istep += 1;
     }
-
+MPI_Barrier(MPI_COMM_WORLD);
     return n_tree;
 
 
