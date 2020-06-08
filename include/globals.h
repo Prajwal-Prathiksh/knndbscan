@@ -16,6 +16,8 @@
 #include <algorithm>
 #include <map>
 #include <iterator>
+#include <getopt.h>
+
 
 using namespace std;
 extern int maxk;

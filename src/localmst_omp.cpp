@@ -1,12 +1,12 @@
-#include "../../include/globals.h"
+#include "../include/globals.h"
 #include "mst_omp.cpp"
 using namespace std;
 
-int dbscan_omp(const point_int N, const point_int *JA, const float *A, vector<point_int> &R, vector<point_int> &C, const vector<point_int> core, vector<edge_int> &crossE)
+int localmst_omp(const point_int N, const point_int ISTART, const point_int *JA, const float *A, vector<point_int> &R, vector<point_int> &C, const vector<point_int> core, vector<edge_int> &crossE)
 {
-int rank;
+    int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-//note that for multi process, N represents total # points of the local process
+    //note that for multi process, N represents total # points of the local process
     point_int N_core = core.size();
     point_int n_tree = N_core;
     point_int dn_tree = 1;
@@ -14,6 +14,9 @@ int rank;
     vector<point_int> checked(N), cycleFlags(N);
     vector<Edge> minE(N);
     vector<Cycle> cycles;
+
+    vector<int> isteps;
+    vector<int> n_trees;
 
     point_int count;
     vector<point_int> counts(num_threads);
@@ -55,11 +58,11 @@ int rank;
         {
             point_int i = C[c];
             point_int j = minE[i].j;
-            if(j == -1){ // a sink node, no outer edges: a root at this itertaion
+            if(j == -1){
                 minE[i].j = i;
             }else{
                 point_int k = minE[j].j;
-                if((i == k) and (i < j)){ // an edge shared as minimum by two nodes, choose the one with smaller index as a root.
+                if((i == k) and (i < j)){
                     minE[i].j = i;
                 }
             }
@@ -102,7 +105,6 @@ int rank;
             }
         }
         if(cycles.size() > 0){
-            cout<< "cycle detected"<<endl;
             break_cycles(cycles, minE);
         }
         //phase-VI: update roots R, number of trees and clusters
@@ -119,13 +121,14 @@ int rank;
                 C.push_back(i);
             }
         }
+        
         //check:
         n_tree = C.size();
         dn_tree = n_tree_old - n_tree;
-        if(rank == 0) cout<<"rank0:" << istep<<"-"<<n_tree<<endl;
+        isteps.push_back(istep);
+        n_trees.push_back(n_tree);
         istep += 1;
     }
-MPI_Barrier(MPI_COMM_WORLD);
     return n_tree;
 
 

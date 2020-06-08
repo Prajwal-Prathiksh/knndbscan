@@ -1,7 +1,10 @@
-#include "../../include/globals.h"
+#include "../include/globals.h"
 using namespace std;
 
 
+// parallel mst on shared memory model:
+// function "mst_omp" 
+// NOTE: this function is different than the local mst construction.
 
 inline bool cas(Edge &e_old, const float w_old, const point_int j_new, const float w_new)
 {
@@ -26,9 +29,6 @@ inline void pwrite(Edge &e_old, const point_int j_new, const float w_new)
     // the first condition determines if it is necessary to swap
     // the second condition determines if the swap is successed.
 }
-
-
-
 
 inline void pointer_jumping(const point_int i, Edge &e1, const point_int j, vector<point_int> &cycleFlags, point_int &count)
 {
@@ -117,7 +117,7 @@ inline void break_cycles(const vector<Cycle> cycles, vector<Edge> &minE)
 
 }
 
-vector<point_int> parallel_mst(const point_int N, const edge_int *IA, const point_int *JA, const float *A)
+vector<point_int> mst_omp(const point_int N, const edge_int *IA, const point_int *JA, const float *A)
 {
     point_int n_tree = N;
     point_int dn_tree = 1;
