@@ -24,9 +24,13 @@
 
 
 ### Input kNN-G file format
-    each line has all k neighbors of a point. The begining is the point id. Then all k neighbors has the format of distance followed by the neighbot id.
-    For example, k = 3, line for point 7 can be:
-        7 0.00 7 1.0 10 2.0 11
+    For ASCII file of kNN-G, each line has all k neighbors of a point. The beginning is the point id. Then all k neighbors has the format of distance followed by the neighbor id.
+    For example, k = 3, point 7 with 3-nearest neighbors are (0.0, 7) (1.0, 10) (2.0,11). Line for point 7 is: 7 0.00 7 1.0 10 2.0 11
+
+
+### Example kNN-G files
+    Some example kNN-G files are available from <https://drive.google.com/open?id=1osnWytsjqfwBWyFs70neaYgR9V3BKXUI>.
+    There are kNN-Gs for four datasets: MNIST70K, MNIST2M, CIFAR-10 and Uniform2S. For examople, "MNIST70K.knn100.txt.zip" contatins kNN-G graph of dataset MNIST70K with k=100.    
 
 
 ### Output label file 
