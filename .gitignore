@@ -4,5 +4,8 @@
 *.so
 knndbscan
 
+# Input files
+test/input/*
+
 # VSCode files
 .vscode/
