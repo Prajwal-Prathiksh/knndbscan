@@ -8,14 +8,17 @@ from sklearn.datasets import make_moons
 from sklearn.neighbors import NearestNeighbors
 
 CWD = Path.cwd()
+INPUT_DIR = CWD / "test" / "input"
+INPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 DEFAULT_N: int = 200
 DEFAULT_EPS: float = 1300.0
 DEFAULT_K: int = 5  # includes self
 DEFAULT_THREADS: int = os.cpu_count() or 1  # Use all available CPU cores
 DEFAULT_NOISE: float = 0.05
-DEFAULT_OUT_KNN: Path = CWD / "test" / "input.txt"
-DEFAULT_OUT_GT: Path = CWD / "test" / "gt.txt"
-DEFAULT_OUT_POINTS: Path = CWD / "test" / "points.txt"
+DEFAULT_OUT_KNN: Path = INPUT_DIR / "input.txt"
+DEFAULT_OUT_GT: Path = INPUT_DIR / "gt.txt"
+DEFAULT_OUT_POINTS: Path = INPUT_DIR / "points.txt"
 DEFAULT_RANDOM_STATE: int = 42
 
 
@@ -145,7 +148,10 @@ def create_run_script(
 
     Returns the Path to the created script.
     """
-    exe = exe or (CWD / "test" / "knndbscan")
+    exe = CWD / "test" / "knndbscan"
+    if not exe.exists():
+        raise FileNotFoundError(f"knndbscan executable not found at: {exe}")
+
     graph_k = graph_k if graph_k is not None else minPts
     out_dir.mkdir(parents=True, exist_ok=True)
     script_path = out_dir / "run_test_knndbscan.sh"
@@ -154,9 +160,6 @@ def create_run_script(
 set -euo pipefail
 
 EXE=\"{exe}\"
-if [ ! -x \"$EXE\" ]; then
-  echo "Warning: executable $EXE not found or not executable. Build it first in test/: 'make'" >&2
-fi
 
 "$EXE" -n {n} -e {eps} -m {minPts} -i \"{knn_file}\" -k {graph_k} -o \"{out_labels}\" -t {threads}
 """

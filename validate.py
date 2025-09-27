@@ -6,10 +6,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn import metrics
 
-DEFAULT_GT: Path = Path("test/gt.txt")
-DEFAULT_LABELS: Path = Path("test/labels.txt")
-DEFAULT_POINTS: Path = Path("test/points.txt")
-DEFAULT_OUT_PNG: Path = Path("test/clusters.png")
+CWD = Path.cwd()
+INPUT_DIR = CWD / "test" / "input"
+INPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+DEFAULT_GT = INPUT_DIR / "gt.txt"
+DEFAULT_LABELS = INPUT_DIR / "labels.txt"
+DEFAULT_POINTS = INPUT_DIR / "points.txt"
+DEFAULT_OUT_PNG = INPUT_DIR / "clusters.png"
 
 
 def load_points(path: Path) -> np.ndarray:
