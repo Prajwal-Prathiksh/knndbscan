@@ -15,6 +15,7 @@ DEFAULT_THREADS: int = os.cpu_count() or 1  # Use all available CPU cores
 DEFAULT_NOISE: float = 0.05
 DEFAULT_OUT_KNN: Path = CWD / "test" / "input.txt"
 DEFAULT_OUT_GT: Path = CWD / "test" / "gt.txt"
+DEFAULT_OUT_POINTS: Path = CWD / "test" / "points.txt"
 DEFAULT_RANDOM_STATE: int = 42
 
 
@@ -71,6 +72,18 @@ def write_gt_file(path: Path, labels: np.ndarray) -> None:
             f.write(f"{int(lab)}\n")
 
 
+def write_points_file(path: Path, X: np.ndarray) -> None:
+    """Write point ID and coordinates per line.
+
+    Each line: `id x0 x1 ...`
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as f:
+        for i, coords in enumerate(X):
+            coord_str = " ".join(f"{c:.6f}" for c in coords)
+            f.write(f"{i} {coord_str}\n")
+
+
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments."""
     p = argparse.ArgumentParser(
@@ -102,6 +115,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_OUT_GT,
         help="Path to output ground-truth labels file.",
+    )
+    p.add_argument(
+        "--out-points",
+        type=Path,
+        default=DEFAULT_OUT_POINTS,
+        help="Path to output points file.",
     )
     p.add_argument(
         "--random-state", type=int, default=DEFAULT_RANDOM_STATE, help="Random seed."
@@ -158,12 +177,17 @@ def main() -> None:
         n_samples=args.n, noise=args.noise, random_state=args.random_state
     )
 
+    # Write all outputs
     distances, indices = make_knn_graph(X, args.k)
     write_knn_file(args.out_knn, distances, indices)
     write_gt_file(args.out_gt, y)
+    write_points_file(args.out_points, X)
+
     print(f"Wrote kNN graph to: {args.out_knn}")
     print(f"Wrote ground-truth labels to: {args.out_gt}")
+    print(f"Wrote points file to: {args.out_points}")
 
+    # Generate run script
     out_dir = Path(args.out_knn).parent
     script = create_run_script(
         out_dir=out_dir,
