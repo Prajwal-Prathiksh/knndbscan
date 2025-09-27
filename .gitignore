@@ -3,3 +3,6 @@
 *.dll
 *.so
 knndbscan
+
+# VSCode files
+.vscode/
