@@ -6,7 +6,7 @@
 #include <omp.h>
 
 #include "../include/globals.h"
-#include "clusters.cpp"
+#include "../include/clusters.h"
 
 namespace py = pybind11;
 
