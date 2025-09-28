@@ -3,7 +3,6 @@
 *.dll
 *.so
 *.o
-knndbscan
 
 # Build files
 build/
