@@ -9,3 +9,10 @@ dependencies = [
     "numpy>=2.3.3",
     "scikit-learn>=1.7.2",
 ]
+
+[dependency-groups]
+dev = [
+    "pybind11>=3.0.1",
+    "setuptools>=80.9.0",
+]
+
