@@ -87,7 +87,6 @@ def main():
     t2 = time.perf_counter()
     print(f"Clustering took {t2 - t1:.2f} seconds")
 
-    return
     # Compute and print stats
     stats = compute_stats(y_true, labels_pred, X=X)
     print_stats(stats)
