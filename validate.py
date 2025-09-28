@@ -16,25 +16,6 @@ DEFAULT_POINTS = INPUT_DIR / "points.txt"
 DEFAULT_OUT_PNG = INPUT_DIR / "clusters.png"
 
 
-def load_points(path: Path) -> np.ndarray:
-    """Load points with leading ID column.
-
-    Assumes each line is: `id x0 x1 ...`.
-
-    Args:
-        path: File path.
-
-    Returns:
-        Array of shape (n_samples, d) with coordinates only (IDs dropped).
-    """
-    raw = np.loadtxt(path, dtype=float)
-    if raw.ndim == 1:
-        raw = raw[None, :]
-    if raw.shape[1] < 2:
-        raise ValueError("points file must have at least id and one coordinate.")
-    return raw[:, 1:]  # drop id
-
-
 def compute_stats(
     labels_true: np.ndarray, labels_pred: np.ndarray, X: Optional[np.ndarray] = None
 ) -> dict:
@@ -199,7 +180,7 @@ def main() -> None:
     """Entry point."""
     args = parse_args()
 
-    X = load_points(args.points)
+    X = np.loadtxt(args.points, dtype=float)
     y_true = np.loadtxt(args.ground_truth, dtype=int)
     y_pred = np.loadtxt(args.labels, dtype=int)
 

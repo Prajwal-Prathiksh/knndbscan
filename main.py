@@ -82,9 +82,9 @@ def write_points_file(path: Path, X: np.ndarray) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as f:
-        for i, coords in enumerate(X):
+        for coords in X:
             coord_str = " ".join(f"{c:.6f}" for c in coords)
-            f.write(f"{i} {coord_str}\n")
+            f.write(coord_str + "\n")
 
 
 def parse_args() -> argparse.Namespace:
