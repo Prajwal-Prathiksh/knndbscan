@@ -4,7 +4,7 @@ from setuptools import setup
 ext_modules = [
     Pybind11Extension(
         "knndbscan._core",
-        ["src/pybind.cpp"],
+        ["src/pybind.cpp", "src/clusters.cpp"],
         include_dirs=["include"],
         libraries=["mpi", "gomp"],  # MPI and OpenMP libraries
         extra_compile_args=[
