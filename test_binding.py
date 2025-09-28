@@ -5,11 +5,11 @@ import numpy as np
 from sklearn.datasets import make_moons
 from sklearn.neighbors import NearestNeighbors
 
-from knndbscan import _core
+from knndbscan import knndbscan
 from validate import compute_stats, plot_clusters_2d, print_stats
 
 # Constants
-N_SAMPLES = 1_500_000
+N_SAMPLES = 10_000
 NOISE = 0.05
 RANDOM_STATE = 42
 EPS = 1300.0
@@ -83,7 +83,7 @@ def main():
 
     # Run clustering
     t1 = time.perf_counter()
-    labels_pred = _core.knndbscan(N, eps, minPts, k, JA, A, threads=THREADS)
+    labels_pred = knndbscan(N, eps, minPts, k, JA, A, threads=THREADS)
     t2 = time.perf_counter()
     print(f"Clustering took {t2 - t1:.2f} seconds")
 

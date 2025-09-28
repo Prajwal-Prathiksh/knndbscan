@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Threading Benchmark for k-NN DBSCAN core (_core.knndbscan)
+Threading Benchmark for k-NN DBSCAN core (knndbscan.knndbscan).
 
 - Generates a deterministic synthetic k-NN graph (exact shape you need), so that
   k-NN build time doesn't dominate and you can focus on the clustering kernel.
@@ -15,13 +15,13 @@ from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import numpy as np
 
-from knndbscan import _core
+from knndbscan import knndbscan
 
 # =========================
 # ======= CONSTANTS =======
 # =========================
 # Data / graph
-N: int = 10_000_000
+N: int = 40_000_000
 EPS: float = 100.0
 MIN_PTS: int = (
     20  # includes self if you were to keep it; we drop one column -> k = MIN_PTS - 1
@@ -111,7 +111,7 @@ def flatten_graph(
 ) -> tuple[np.ndarray, np.ndarray, int]:
     """
     Drop the first neighbor column (often self or closest neighbor)
-    and flatten to CSR-like arrays A (weights) and JA (indices) expected by _core.
+    and flatten to CSR-like arrays A (weights) and JA (indices) expected by k-NN DBSCAN.
     """
     A = distances[:, 1:].reshape(-1).astype(np.float32, copy=False)
     JA = indices[:, 1:].reshape(-1).astype(np.int32, copy=False)
@@ -132,7 +132,7 @@ def run_knndbscan_once(
     Run the core DBSCAN once and return (labels, elapsed_time_seconds).
     """
     start = time.perf_counter()
-    labels = _core.knndbscan(n, eps, min_pts, k, JA, A, threads=threads)
+    labels = knndbscan(n, eps, min_pts, k, JA, A, threads=threads)
     elapsed = time.perf_counter() - start
     return labels, elapsed
 
