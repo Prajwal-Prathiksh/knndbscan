@@ -7,7 +7,13 @@ ext_modules = [
         ["src/pybind.cpp"],
         include_dirs=["include"],
         libraries=["mpi", "gomp"],  # MPI and OpenMP libraries
-        extra_compile_args=["-fopenmp"],
+        extra_compile_args=[
+            "-O3",
+            "-fopenmp",
+            "-Wno-unused-variable",
+            "-Wno-unused-value",
+            "-Wno-sign-compare",
+        ],
         extra_link_args=["-fopenmp"],
     ),
 ]
