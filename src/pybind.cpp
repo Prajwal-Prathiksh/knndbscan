@@ -11,8 +11,13 @@
 namespace py = pybind11;
 
 py::array_t<int> knndbscan_py(int N, float eps, int minPts, int k, py::array_t<int> JA_np, py::array_t<float> A_np, int threads = 1) {
+    int initialized;
+    MPI_Initialized(&initialized);
+    
     int provided;
-    MPI_Init_thread(NULL, NULL, MPI_THREAD_SERIALIZED, &provided);
+    if (!initialized) {
+        MPI_Init_thread(NULL, NULL, MPI_THREAD_SERIALIZED, &provided);
+    }
     
     omp_set_dynamic(0);     // Explicitly disable dynamic teams
     omp_set_num_threads(threads);
@@ -24,7 +29,8 @@ py::array_t<int> knndbscan_py(int N, float eps, int minPts, int k, py::array_t<i
     
     std::vector<point_int> labels = knndbscan(N, eps, minPts, k, JA, A);
     
-    MPI_Finalize();
+    // Don't finalize MPI here - let it persist for multiple calls
+    // MPI will be finalized when the Python process exits
     
     return py::array_t<int>(labels.size(), labels.data());
 }
