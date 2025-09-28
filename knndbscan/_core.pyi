@@ -1,4 +1,3 @@
-import time
 from typing import Annotated
 
 import numpy as np
