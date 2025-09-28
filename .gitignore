@@ -2,7 +2,16 @@
 *.exe
 *.dll
 *.so
+*.o
 knndbscan
+
+# Build files
+build/
+dist/
+
+# Python Cache
+__pycache__/
+*.pyc
 
 # Input files
 test/input/*
