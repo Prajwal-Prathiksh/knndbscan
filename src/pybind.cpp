@@ -3,15 +3,19 @@
 #include <pybind11/numpy.h>
 #include <vector>
 #include <mpi.h>
+#include <omp.h>
 
 #include "../include/globals.h"
 #include "clusters.cpp"
 
 namespace py = pybind11;
 
-py::array_t<int> knndbscan_serial(int N, float eps, int minPts, int k, py::array_t<int> JA_np, py::array_t<float> A_np) {
+py::array_t<int> knndbscan_py(int N, float eps, int minPts, int k, py::array_t<int> JA_np, py::array_t<float> A_np, int threads = 1) {
     int provided;
     MPI_Init_thread(NULL, NULL, MPI_THREAD_SERIALIZED, &provided);
+    
+    omp_set_dynamic(0);     // Explicitly disable dynamic teams
+    omp_set_num_threads(threads);
     
     auto JA_buf = JA_np.request();
     auto A_buf = A_np.request();
@@ -26,6 +30,6 @@ py::array_t<int> knndbscan_serial(int N, float eps, int minPts, int k, py::array
 }
 
 PYBIND11_MODULE(_core, m) {
-    m.def("knndbscan", &knndbscan_serial, "kNN-DBSCAN clustering",
-          py::arg("N"), py::arg("eps"), py::arg("minPts"), py::arg("k"), py::arg("JA"), py::arg("A"));
+    m.def("knndbscan", &knndbscan_py, "kNN-DBSCAN clustering",
+          py::arg("N"), py::arg("eps"), py::arg("minPts"), py::arg("k"), py::arg("JA"), py::arg("A"), py::arg("threads") = 1);
 }
