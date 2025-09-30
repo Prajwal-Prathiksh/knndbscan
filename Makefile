@@ -14,8 +14,8 @@ install:
 	uv run pip install -e .
 
 # Run tests
-test: install
-	uv run python test_binding.py
+test:
+	uv run python examples/test_binding.py
 
 # Clean build artifacts
 clean:

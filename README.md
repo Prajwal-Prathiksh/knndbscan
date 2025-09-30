@@ -3,11 +3,19 @@ A parallel implementation of kNN-DBSCAN given k-NNG using MPI and OpenMP.
 
 ### Python Wrapper Installation
 To build and install the Python wrapper in your uv virtual environment:
-
-    uv sync
+```sh
     make install
-
+```
 This installs the package in editable mode, allowing you to import `knndbscan` in Python.
+
+#### Test Python Binding
+To test the Python binding, run:
+```sh
+    make test
+```
+This runs a simple test script located at [`examples/test_binding.py`](examples/test_binding.py).
+
+To test the performance of the code across multiple `OMP` threads, refer to [`examples/benchmark_threading.py`](examples/benchmark_threading.py). This script benchmarks the threading performance of the kNN-DBSCAN core algorithm.
 
 ### Compile the source code
     cd test/

@@ -11,42 +11,42 @@ Threading Benchmark for k-NN DBSCAN core (knndbscan.knndbscan).
 
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 from knndbscan import knndbscan
 
-# =========================
-# ======= CONSTANTS =======
-# =========================
-# Data / graph
-N: int = 40_000_000
-EPS: float = 100.0
-MIN_PTS: int = (
+SCRIPT_DIRECTORY = Path(__file__).parent.resolve()
+FIGURES_DIRECTORY = SCRIPT_DIRECTORY / "figures"
+FIGURES_DIRECTORY.mkdir(exist_ok=True, parents=True)
+
+# Constants
+N = 4_000_000
+EPS = 100.0
+MIN_PTS = (
     20  # includes self if you were to keep it; we drop one column -> k = MIN_PTS - 1
 )
-RNG_SEED: int = 42
-DIST_RANGE: tuple[float, float] = (0.0, 200.0)  # range for synthetic distances
+RNG_SEED = 42
+DIST_RANGE = (0.0, 200.0)  # range for synthetic distances
 
 # Benchmarking
-THREAD_COUNTS: list[int] = [1, 2, 4, 6, 8, 10, 12, 14, 16]
-N_RUNS_PER_SETTING: int = 3  # repetitions for each thread count
+THREAD_COUNTS = [1, 2, 4, 6, 8, 10, 12, 14, 16]
+N_RUNS_PER_SETTING = 3  # repetitions for each thread count
 
 # Output
-OUT_BASENAME: str = "threading_performance"
+OUT_PNG = FIGURES_DIRECTORY / "benchmark_threading.png"
 
 # Plot look
-FIGSIZE: tuple[int, int] = (14, 5)
-DPI: int = 300
-GRID_ALPHA: float = 0.25
-MARKER_SIZE: int = 7
-LINE_WIDTH: int = 2
+FIGSIZE = (14, 5)
+DPI = 300
+GRID_ALPHA = 0.25
+MARKER_SIZE = 7
+LINE_WIDTH = 2
 
 
-# =========================
 # ===== DATA CLASSES ======
-# =========================
 @dataclass
 class BenchResult:
     time_avg: float
@@ -54,9 +54,7 @@ class BenchResult:
     clusters: int
 
 
-# =========================
 # ====== UTILITIES ========
-# =========================
 def _ensure_no_self_neighbors(indices: np.ndarray, n: int) -> np.ndarray:
     """
     Replace any self-neighbor (indices[i, j] == i) with (i+1) % n.
@@ -209,10 +207,10 @@ def print_summary(results: dict[int, BenchResult]) -> None:
         print("- Memory bandwidth, NUMA effects, or oversubscription")
 
 
-def make_plots(results: dict[int, BenchResult], out_basename: str) -> None:
+def make_plots(results: dict[int, BenchResult], figure_path: Path) -> None:
     """
     Create two plots: runtime vs threads (with error bars) and speedup vs threads.
-    Saves PNG/PDF according to flags.
+    Saves PNG files to the specified path (without extension).
     """
     thread_list = sorted(results.keys())
     times = np.array([results[t].time_avg for t in thread_list])
@@ -281,12 +279,10 @@ def make_plots(results: dict[int, BenchResult], out_basename: str) -> None:
 
     plt.tight_layout()
 
-    plt.savefig(f"{out_basename}.png", dpi=DPI, bbox_inches="tight")
+    plt.savefig(figure_path, dpi=DPI, bbox_inches="tight")
 
 
-# =========================
 # ========= MAIN ==========
-# =========================
 def main() -> None:
     print("Simple Threading Benchmark for k-NN DBSCAN Core")
     print("=" * 60)
@@ -310,7 +306,7 @@ def main() -> None:
 
     # Summary + plots
     print_summary(results)
-    make_plots(results, OUT_BASENAME)
+    make_plots(results, OUT_PNG)
 
 
 if __name__ == "__main__":
