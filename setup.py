@@ -9,6 +9,7 @@ ext_modules = [
         libraries=["mpi", "gomp"],  # MPI and OpenMP libraries
         extra_compile_args=[
             "-O3",
+            # "-g",  # Enable debugging symbols
             "-fopenmp",
             "-Wno-unused-variable",
             "-Wno-unused-value",
