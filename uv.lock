@@ -170,28 +170,28 @@ wheels = [
 [[package]]
 name = "knndbscan"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
-    { name = "matplotlib" },
     { name = "numpy" },
     { name = "scikit-learn" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "matplotlib" },
     { name = "pybind11" },
     { name = "setuptools" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "matplotlib", specifier = ">=3.10.6" },
     { name = "numpy", specifier = ">=2.3.3" },
     { name = "scikit-learn", specifier = ">=1.7.2" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "matplotlib", specifier = ">=3.10.6" },
     { name = "pybind11", specifier = ">=3.0.1" },
     { name = "setuptools", specifier = ">=80.9.0" },
 ]

@@ -1,18 +1,21 @@
 [project]
 name = "knndbscan"
 version = "0.1.0"
-description = "Add your description here"
+description = "Python wrapper to a parallel implementation of kNN-DBSCAN given k-NNG using MPI and OpenMP."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "matplotlib>=3.10.6",
     "numpy>=2.3.3",
     "scikit-learn>=1.7.2",
 ]
 
 [dependency-groups]
 dev = [
+    "matplotlib>=3.10.6",
     "pybind11>=3.0.1",
     "setuptools>=80.9.0",
 ]
 
+[build-system]
+requires = ["setuptools", "pybind11"]
+build-backend = "setuptools.build_meta"
