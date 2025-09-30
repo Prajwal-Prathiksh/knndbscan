@@ -2,4 +2,19 @@
 *.exe
 *.dll
 *.so
-knndbscan
+*.o
+
+# Build files
+build/
+dist/
+*.egg-info/
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Input files
+test/input/*
+
+# VSCode files
+.vscode/

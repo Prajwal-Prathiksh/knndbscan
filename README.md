@@ -1,6 +1,14 @@
 ## kNN-DBSCAN
 A parallel implementation of kNN-DBSCAN given k-NNG using MPI and OpenMP.
 
+### Python Wrapper Installation
+To build and install the Python wrapper in your uv virtual environment:
+
+    uv sync
+    make install
+
+This installs the package in editable mode, allowing you to import `knndbscan` in Python.
+
 ### Compile the source code
     cd test/
     make
