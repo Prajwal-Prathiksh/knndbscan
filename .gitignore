@@ -7,6 +7,7 @@
 # Build files
 build/
 dist/
+*.egg-info/
 
 # Python Cache
 __pycache__/
