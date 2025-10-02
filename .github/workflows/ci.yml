@@ -33,6 +33,13 @@ jobs:
       run: |
         uv sync --all-groups
     
+    - name: Set MPI environment variables
+      run: |
+        echo "CC=mpicc" >> $GITHUB_ENV
+        echo "CXX=mpicxx" >> $GITHUB_ENV
+        echo "MPICC=mpicc" >> $GITHUB_ENV
+        echo "MPICXX=mpicxx" >> $GITHUB_ENV
+    
     - name: Install package
       run: uv run pip install -e .
     
