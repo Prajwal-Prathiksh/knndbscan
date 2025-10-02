@@ -1,7 +1,7 @@
 CC = mpicxx
 PROJ = knndbscan
 APP = $(PROJ)
-CFLAGS = -O3
+CFLAGS = -O3 -I../include
 
 .PHONY: clean
 
