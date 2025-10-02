@@ -16,16 +16,30 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     
+    # Cache apt packages to speed up system dependency installation
+    # This caches downloaded packages and package lists between CI runs
+    - name: Cache apt packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          /var/cache/apt/archives  # Downloaded package files
+          /var/lib/apt/lists       # Package list metadata
+        key: ${{ runner.os }}-apt-${{ hashFiles('**/ci.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-apt-
+    
     - name: Install uv
       uses: astral-sh/setup-uv@v6
       with:
         enable-cache: true
         python-version: ${{ matrix.python-version }}
     
+    # Install MPI development libraries and runtime
+    # --no-install-recommends avoids unnecessary recommended packages for faster installs
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libopenmpi-dev openmpi-bin
+        sudo apt-get install -y --no-install-recommends libopenmpi-dev openmpi-bin
     
     - name: Set MPI environment variables
       run: |
