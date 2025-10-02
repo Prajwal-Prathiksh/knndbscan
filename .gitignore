@@ -8,6 +8,7 @@
 build/
 dist/
 *.egg-info/
+test/knndbscan
 
 # Python Cache
 __pycache__/
