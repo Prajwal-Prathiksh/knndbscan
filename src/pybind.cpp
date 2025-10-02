@@ -5,8 +5,8 @@
 #include <mpi.h>
 #include <omp.h>
 
-#include "../include/globals.h"
-#include "../include/clusters.h"
+#include "globals.h"
+#include "clusters.h"
 
 namespace py = pybind11;
 

@@ -1,4 +1,4 @@
-#include "../include/globals.h"
+#include "globals.h"
 #include "localmst_omp.cpp"
 #include "cutedges.cpp"
 #include "cutmst.cpp"
