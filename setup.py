@@ -20,7 +20,7 @@ def get_mpi_flags():
             [f for f in link_flags if f.startswith("-")],
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print("Warning: Using fallback MPI configuration")
+        # MPI compiler not found. Using fallback MPI configuration
         return ["-I/usr/include/mpi"], ["-lmpi"]
 
 
