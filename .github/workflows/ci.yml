@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.13"]
+
+    steps:
+    - uses: actions/checkout@v5
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libopenmpi-dev openmpi-bin
+    
+    - name: Set MPI environment variables
+      run: |
+        echo "CC=mpicc" >> $GITHUB_ENV
+        echo "CXX=mpicxx" >> $GITHUB_ENV
+        echo "MPICC=mpicc" >> $GITHUB_ENV
+        echo "MPICXX=mpicxx" >> $GITHUB_ENV
+    
+    - name: Install dependencies and package
+      run: |
+        uv sync --locked --all-groups
+    
+    - name: Run linting
+      run: |
+        uv run --group lint ruff check .
+        uv run --group lint mypy knndbscan/ || true  # Allow mypy to fail for now
+    
+    - name: Run tests
+      run: |
+        uv run --group test pytest
+    
+    - name: Build package
+      run: uv build

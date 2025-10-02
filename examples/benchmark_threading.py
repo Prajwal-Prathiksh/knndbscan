@@ -8,7 +8,6 @@ Threading Benchmark for k-NN DBSCAN core (knndbscan.knndbscan).
 - Prints a neat summary and saves pretty plots (PNG/PDF).
 """
 
-
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -236,7 +235,7 @@ def make_plots(results: dict[int, BenchResult], figure_path: Path) -> None:
     ax.set_title("k-NN DBSCAN Core: Runtime vs Threads")
     ax.grid(True, alpha=GRID_ALPHA)
     ax.set_xticks(thread_list)
-    for t, y in zip(thread_list, times):
+    for t, y in zip(thread_list, times, strict=False):
         ax.annotate(
             f"{y:.3f}s",
             xy=(t, y),
@@ -268,7 +267,7 @@ def make_plots(results: dict[int, BenchResult], figure_path: Path) -> None:
     ax.grid(True, alpha=GRID_ALPHA)
     ax.set_xticks(thread_list)
     ax.legend()
-    for t, s in zip(thread_list, speedups):
+    for t, s in zip(thread_list, speedups, strict=False):
         ax.annotate(
             f"{s:.2f}×",
             xy=(t, s),

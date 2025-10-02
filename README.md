@@ -1,61 +1,67 @@
 ## kNN-DBSCAN
 A parallel implementation of kNN-DBSCAN given k-NNG using MPI and OpenMP.
 
-### Python Wrapper Installation
-To build and install the Python wrapper in your uv virtual environment:
+### Python Package
+
+**Install:**
 ```sh
-    make install
+make install
 ```
-This installs the package in editable mode, allowing you to import `knndbscan` in Python.
 
-#### Test Python Binding
-To test the Python binding, run:
+**Test:**
 ```sh
-    make test
+make test           # Unit tests
+make test-examples  # Benchmarking & visualizations
 ```
-This runs a simple test script located at [`examples/test_binding.py`](examples/test_binding.py).
 
-To test the performance of the code across multiple `OMP` threads, refer to [`examples/benchmark_threading.py`](examples/benchmark_threading.py). This script benchmarks the threading performance of the kNN-DBSCAN core algorithm.
+**Development:**
+```sh
+make lint     # Code linting
+make format   # Code formatting  
+make build    # Build distributions
+make clean    # Clean artifacts
+```
 
-### Compile the source code
-    cd test/
-    make
+### Standalone C++ Build
+```sh
+cd test/ && make
+```
 
-### Usage
-To run knn-DBSCAN (with input parameters $\epsilon$=1300.0, $k$=100$) an an existing knn graph ("mnist70k.knn.txt") of a dataset (with 7,000 points) with 4 MPI tasks and 4 threads per MPI task:
+### C++ Usage
+Run kNN-DBSCAN with ε=1300.0, k=100 on kNN graph with 4 MPI tasks and 4 threads:
+```sh
+cd test/
+ibrun -np 4 ./knndbscan -n 70000 -e 1300.0 -m 100 -i mnist70k.knn.txt -k 100 -o labels.txt -t 4
+```
 
-    cd test/
-    ibrun -np 4 ./knndbscan -n 70000 -e 1300.0 -m 100 -i mnist70k.knn.txt -k 100 -o labels.txt -t 4
-    
-The descriptions each arguements:
-- n num_points  : number of points
-- e epsilon     : input parameter of kNN-DBSCAN, raidus of consideration for core points
-- m minpts      : input parameter of kNN-DBSCAN, min points
-- i knngraph_name    : file containing kNN graph
-- k num_neighbors    : number of neighbors for each point in input file,k should be no less than m (default of k is m is k is not set)
-- o output      : output file with label for each point, the order of points is as the same with knn graph
-- t threads  : number of threads per MPI task
-
-Also, run the following to get the above description on the program arguments:
-
-    ibrun -np 1 ./knndbscan ?
-
-
-### Input kNN-G file format
-For ASCII file of kNN-G, each line has all k neighbors of a point. The beginning is the point id. Then all k neighbors has the format of distance followed by the neighbor id.
-
-For example, k = 3, point 7 with 3-nearest neighbors are (0.0, 7) (1.0, 10) (2.0,11). Line for point 7 is: 7 0.00 7 1.0 10 2.0 11
+**Arguments:**
+- `-n`: Number of points
+- `-e`: Epsilon (radius for core points)  
+- `-m`: MinPts (minimum points for dense region). Note: MinPts should be k + 1.
+- `-i`: Input kNN graph file
+- `-k`: Number of neighbors per point
+- `-o`: Output labels file
+- `-t`: Threads per MPI task
 
 
-### Example kNN-G files
-Some example kNN-G files are available from <https://drive.google.com/open?id=1osnWytsjqfwBWyFs70neaYgR9V3BKXUI>.
+### File Formats
 
-There are kNN-Gs for four datasets: MNIST70K, MNIST2M, CIFAR-10 and Uniform2S. For example, "MNIST70K.knn100.txt.zip" contatins kNN-G graph of dataset MNIST70K with k=100.   
+**kNN Graph:** Each line contains a point's k neighbors:
+```
+point_id distance1 neighbor1_id distance2 neighbor2_id ...
+```
 
+For example, k = 3, point 7 has 3 nearest neighbors, being (7, 0.00), (10, 1.0), and (11, 2.0).
+This point is represented as:
+```
+7 0.00 7 1.0 10 2.0 11
+```
+> [!NOTE]
+> For a given point, its own ID **must** be included as a neighbor with distance 0.0.
+> This requirement stems from the core point detection algorithm in [`src/clusters.cpp:43`](src/clusters.cpp#L43), 
+> which uses direct array indexing `A[p*maxk + minPts-2]` to find the distance to the (minPts-1)th 
+> nearest neighbor, assuming the self-neighbor is always at index 0.
 
-### Output label file 
-Each line of the oputput file has an intger. Sequence of the labels follow the point id from the knn file: "-1" in file represents noise 
-
-Normalized Mutual Information (NMI) values can be computed by using python script NMI.py in /test. This script requires numpy (1.16.4) and (0.21.2).
+**Output:** One integer per line (cluster ID or -1 for noise)
 
 
