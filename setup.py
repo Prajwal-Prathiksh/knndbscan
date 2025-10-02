@@ -1,12 +1,16 @@
-from pybind11.setup_helpers import Pybind11Extension
+from pybind11.setup_helpers import Pybind11Extension, build_ext
 from setuptools import setup
 
+# Define the extension module
 ext_modules = [
     Pybind11Extension(
         "knndbscan._core",
-        ["src/pybind.cpp", "src/clusters.cpp"],
+        [
+            "src/pybind.cpp",
+            "src/clusters.cpp",
+        ],
         include_dirs=["include"],
-        libraries=["mpi", "gomp"],  # MPI and OpenMP libraries
+        libraries=["mpi", "gomp"],
         extra_compile_args=[
             "-O3",
             # "-g",  # Enable debugging symbols
@@ -20,9 +24,6 @@ ext_modules = [
 ]
 
 setup(
-    name="knndbscan",
-    version="0.1.0",
-    packages=["knndbscan"],
-    package_dir={"": "."},
     ext_modules=ext_modules,
+    cmdclass={"build_ext": build_ext},
 )
