@@ -1,28 +1,31 @@
 [project]
 name = "knndbscan"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python wrapper to a parallel implementation of kNN-DBSCAN given k-NNG using MPI and OpenMP."
 readme = "README.md"
 requires-python = ">=3.13"
-keywords = ["clustering", "dbscan", "knn", "mpi", "openmp", "parallel"]
+keywords = ["clustering", "dbscan", "knn", "mpi", "openmp", "parallel", "machine-learning", "data-mining"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
     "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: C++",
+    "Operating System :: POSIX :: Linux",
 ]
 dependencies = [
     "numpy>=2.3.3",
     "scikit-learn>=1.7.2",
 ]
-
-# TODO
-# [project.urls]
-# "Homepage" = "https://github.com/Prajwal-Prathiksh/knndbscan"
-# "Bug Reports" = "https://github.com/Prajwal-Prathiksh/knndbscan/issues"
-# "Source" = "https://github.com/Prajwal-Prathiksh/knndbscan"
+[project.urls]
+"Homepage" = "https://github.com/Prajwal-Prathiksh/knndbscan"
+"Bug Reports" = "https://github.com/Prajwal-Prathiksh/knndbscan/issues"
+"Source" = "https://github.com/Prajwal-Prathiksh/knndbscan"
 
 [build-system]
 requires = ["setuptools>=61", "pybind11[global]>=2.6.0"]
@@ -61,6 +64,7 @@ addopts = "--cov=knndbscan --cov-report=html --cov-report=term-missing"
 
 [dependency-groups]
 dev = [
+    "auditwheel>=6.4.2",
     "matplotlib>=3.10.6",
     "pybind11>=3.0.1",
     "setuptools>=80.9.0",
