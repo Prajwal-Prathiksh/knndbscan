@@ -24,8 +24,9 @@ jobs:
         path: |
           /var/cache/apt/archives  # Downloaded package files
           /var/lib/apt/lists       # Package list metadata
-        key: ${{ runner.os }}-apt-${{ hashFiles('**/ci.yml') }}
+        key: ${{ runner.os }}-apt-mpi-v1
         restore-keys: |
+          ${{ runner.os }}-apt-mpi-
           ${{ runner.os }}-apt-
     
     - name: Install uv
