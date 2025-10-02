@@ -1,6 +1,5 @@
 import time
 from pathlib import Path
-from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,7 +25,7 @@ OUT_PNG = FIGURES_DIRECTORY / "clusters_binding.png"
 
 # ====== UTILITIES ========
 def compute_stats(
-    labels_true: np.ndarray, labels_pred: np.ndarray, X: Optional[np.ndarray] = None
+    labels_true: np.ndarray, labels_pred: np.ndarray, X: np.ndarray | None = None
 ) -> dict:
     """Compute clustering stats and indices.
 
@@ -69,7 +68,7 @@ def compute_stats(
         cluster_sizes[int(lab)] = int(np.count_nonzero(labels_pred == lab))
 
     # Silhouette for predicted labels (exclude noise; need >=2 clusters)
-    silhouette_pred: Optional[float] = None
+    silhouette_pred: float | None = None
     if X is not None and n_clusters >= 2:
         Xc = X[clustered_mask]
         yc = labels_pred[clustered_mask]
@@ -125,7 +124,7 @@ def plot_clusters_2d(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     out_png: Path,
-) -> Optional[Path]:
+) -> Path | None:
     """Plot 2D GT vs predicted clusters side-by-side.
 
     Args:
