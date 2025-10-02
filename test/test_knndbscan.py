@@ -11,7 +11,7 @@ def test_knndbscan_threading():
     N = 100
     k = 5
     eps = 1.5
-    minPts = 6  # k + 1
+    minPts = k + 1  # Should be k + 1 according to kNN-DBSCAN spec
 
     # Create properly sized mock data
     # Generate valid neighbor indices (avoid self-neighbors)
@@ -43,7 +43,7 @@ def test_knndbscan_small_dataset():
     N = 4
     k = 2
     eps = 0.5  # Small epsilon to make most points noise
-    minPts = 3  # k + 1
+    minPts = k + 1
 
     # Create a simple k-NN graph where points are far apart
     JA = np.array(
