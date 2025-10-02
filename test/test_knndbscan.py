@@ -78,9 +78,9 @@ def test_knndbscan_small_dataset():
 
     # With large distances and small eps, most/all points should be noise (-1)
     assert len(labels) == N, f"Expected {N} labels, got {len(labels)}"
-    assert isinstance(
-        labels, np.ndarray
-    ), f"Expected labels to be a numpy array, got {type(labels)}"
+    assert isinstance(labels, np.ndarray), (
+        f"Expected labels to be a numpy array, got {type(labels)}"
+    )
     assert labels.dtype == np.int32, "Expected labels to be int32"
 
     # Check that we get some result (could be all noise with these parameters)
