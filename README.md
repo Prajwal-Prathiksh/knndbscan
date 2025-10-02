@@ -64,4 +64,26 @@ This point is represented as:
 
 **Output:** One integer per line (cluster ID or -1 for noise)
 
+## Citation
+
+If you use this software in your research, please cite the following paper:
+
+**BibTeX:**
+```bibtex
+@misc{chen2024knndbscandbscanhighdimensions,
+      title={KNN-DBSCAN: a DBSCAN in high dimensions}, 
+      author={Youguang Chen and William Ruys and George Biros},
+      year={2024},
+      eprint={2009.04552},
+      archivePrefix={arXiv},
+      primaryClass={cs.DC},
+      url={https://arxiv.org/abs/2009.04552}, 
+}
+```
+
+**Plain text:**
+> Chen, Y., Ruys, W., & Biros, G. (2024). KNN-DBSCAN: a DBSCAN in high dimensions. arXiv preprint arXiv:2009.04552.
+
+**Paper:** [KNN-DBSCAN: a DBSCAN in high dimensions](https://arxiv.org/abs/2009.04552)
+
 
