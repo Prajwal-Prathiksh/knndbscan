@@ -4,10 +4,60 @@ version = "0.1.0"
 description = "Python wrapper to a parallel implementation of kNN-DBSCAN given k-NNG using MPI and OpenMP."
 readme = "README.md"
 requires-python = ">=3.13"
+keywords = ["clustering", "dbscan", "knn", "mpi", "openmp", "parallel"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: C++",
+]
 dependencies = [
     "numpy>=2.3.3",
     "scikit-learn>=1.7.2",
 ]
+
+# TODO
+# [project.urls]
+# "Homepage" = "https://github.com/Prajwal-Prathiksh/knndbscan"
+# "Bug Reports" = "https://github.com/Prajwal-Prathiksh/knndbscan/issues"
+# "Source" = "https://github.com/Prajwal-Prathiksh/knndbscan"
+
+[build-system]
+requires = ["setuptools>=61", "pybind11[global]>=2.6.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["knndbscan"]
+
+# Ruff configuration
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "B", "A", "C4", "PIE", "T20", "UP"]
+ignore = ["E501"]  # Line too long (handled by formatter)
+
+[tool.ruff.lint.per-file-ignores]
+"examples/*.py" = ["T201", "N803", "N806"]  # Allow print statements and non-standard naming in examples
+"test/*.py" = ["N806"]  # Allow mathematical variable names in tests (N, A, JA, minPts)
+"*.pyi" = ["N803"]  # Allow non-standard naming in type stubs
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+# Pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["test"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "--cov=knndbscan --cov-report=html --cov-report=term-missing"
 
 [dependency-groups]
 dev = [
@@ -15,7 +65,11 @@ dev = [
     "pybind11>=3.0.1",
     "setuptools>=80.9.0",
 ]
-
-[build-system]
-requires = ["setuptools", "pybind11"]
-build-backend = "setuptools.build_meta"
+lint = [
+    "mypy>=1.18.2",
+    "ruff>=0.13.2",
+]
+test = [
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+]
