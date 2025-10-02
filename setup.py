@@ -37,6 +37,7 @@ ext_modules = [
             "-Wno-unused-variable",
             "-Wno-unused-value",
             "-Wno-sign-compare",
+            # "-g",  # For debugging with gdb
         ]
         + mpi_compile_flags,
         extra_link_args=["-fopenmp"] + mpi_link_flags,
