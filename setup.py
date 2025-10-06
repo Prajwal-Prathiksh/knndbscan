@@ -38,14 +38,13 @@ extra_compile_args = [
     "-Wno-unused-variable",
     "-Wno-unused-value",
     "-Wno-sign-compare",
+    "-O3",
 ]
 
+# Build with debug symbols
 if check_env_flag("DEBUG"):
-    # Debug build: optimization with debug symbols
-    extra_compile_args.extend(["-O3", "-g"])
-else:
-    # Release build: optimization, no debug symbols
-    extra_compile_args.append("-O3")
+    extra_compile_args.append("-g")
+
 
 ext_modules = [
     Pybind11Extension(
