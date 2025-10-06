@@ -1,50 +1,25 @@
-.PHONY: install build test clean help dev lint format check test-examples publish-test publish
+.PHONY: help build check clean dev format install install-debug lint publish publish-test test test-examples
 
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  install    Install the package in editable mode"
 	@echo "  build      Build distribution packages (wheel and sdist)"
-	@echo "  dev        Sync development dependencies"
-	@echo "  test       Run unit tests with pytest"
-	@echo "  test-examples Run example scripts"
-	@echo "  lint       Run linting tools"
-	@echo "  format     Format code with ruff"
 	@echo "  check      Run all checks (lint + test)"
 	@echo "  clean      Clean build artifacts"
-	@echo "  publish-test Publish to Test PyPI"
+	@echo "  dev        Sync development dependencies"
+	@echo "  format     Format code with ruff"
+	@echo "  install    Install the package in editable mode"
+	@echo "  install-debug Install package with optimizations and debug symbols (-O3 -g)"
+	@echo "  lint       Run linting tools"
 	@echo "  publish    Publish to PyPI"
+	@echo "  publish-test Publish to Test PyPI"
+	@echo "  test       Run unit tests with pytest"
+	@echo "  test-examples Run example scripts"
 	@echo "  help       Show this help message"
-
-# Sync all dependency groups
-dev:
-	uv sync --all-groups
-
-# Sync development dependencies and install package in editable mode
-install: dev
-	uv run pip install -e .
 
 # Build distribution packages
 build:
 	uv build
-
-# Run all tests
-test:
-	uv run --group test pytest
-
-# Run example scripts
-test-examples:
-	uv run python examples/test_binding.py
-	uv run python examples/benchmark_threading.py
-
-# Run linting tools
-lint:
-	uv run --group lint ruff check .
-	uv run --group lint mypy knndbscan/ || true
-
-# Format code
-format:
-	uv run --group lint ruff format .
 
 # Run all checks
 check: lint test
@@ -59,7 +34,30 @@ clean:
 	rm -rf .pytest_cache/
 	rm -rf .ruff_cache/
 	rm -rf __pycache__/
+	rm -rf build/
 	rm -rf dist/
+	rm -rf htmlcov/
+
+# Sync all dependency groups
+dev:
+	uv sync --all-groups
+
+# Format code
+format:
+	uv run --group lint ruff format .
+
+# Sync development dependencies and install package in editable mode
+install: dev
+	DEBUG=0 uv run pip install -e .
+
+# Install package with optimizations and debug symbols
+install-debug: dev
+	DEBUG=1 uv run pip install -e . --force-reinstall --no-deps
+
+# Run linting tools
+lint:
+	uv run --group lint ruff check .
+	uv run --group lint mypy knndbscan/ || true
 
 # Publish to Test PyPI
 publish-test:
@@ -135,3 +133,12 @@ publish:
 	rm -rf build/
 	rm -rf dist/
 	rm -rf htmlcov/
+
+# Run all tests
+test:
+	uv run --group test pytest
+
+# Run example scripts
+test-examples:
+	uv run python examples/test_binding.py
+	uv run python examples/benchmark_threading.py
