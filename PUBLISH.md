@@ -37,18 +37,3 @@ python -c "import knndbscan; print('Success!')"
 # Publish to production
 make publish
 ```
-
-## Manual Steps
-
-```bash
-# Build
-make build
-
-# Repair wheels (required for C++ extensions)
-uv run auditwheel repair dist/*.whl --plat manylinux_2_39_x86_64 -w dist/
-
-# Publish
-uv publish --publish-url https://test.pypi.org/legacy/  # Test PyPI
-uv publish  # Production PyPI
-```
-
