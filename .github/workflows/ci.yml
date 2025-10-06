@@ -39,13 +39,10 @@ jobs:
         uv sync --locked --all-groups
     
     - name: Run linting
-      run: |
-        uv run --group lint ruff check .
-        uv run --group lint mypy knndbscan/ || true  # Allow mypy to fail for now
+      run: make lint
     
     - name: Run tests
-      run: |
-        uv run --group test pytest
+      run: make test
     
     - name: Build package
-      run: uv build
+      run: make build

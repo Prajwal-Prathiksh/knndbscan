@@ -4,22 +4,27 @@ A parallel implementation of kNN-DBSCAN given k-NNG using MPI and OpenMP.
 ### Python Package
 
 **Install:**
+
 ```sh
-make install
+make install        # Install in editable mode
+make install-debug  # Install with optimizations & debug symbols
 ```
 
 **Test:**
+
 ```sh
-make test           # Unit tests
-make test-examples  # Benchmarking & visualizations
+make test           # Run unit tests
+make test-examples  # Run example scripts (benchmarking, visualization)
 ```
 
 **Development:**
+
 ```sh
-make lint     # Code linting
-make format   # Code formatting  
-make build    # Build distributions
-make clean    # Clean artifacts
+make lint        # Lint code (ruff, mypy)
+make format      # Format code (ruff)
+make build       # Build wheel & sdist
+make clean       # Remove build artifacts
+make dev         # Sync all dev dependencies
 ```
 
 ### Standalone C++ Build
