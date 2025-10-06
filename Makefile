@@ -1,25 +1,26 @@
-.PHONY: help build check clean dev format install install-debug lint publish publish-test test test-examples
+.PHONY: help build check clean dev format install install-debug lint publish publish-test repair-wheels test test-examples
 
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  build      Build distribution packages (wheel and sdist)"
-	@echo "  check      Run all checks (lint + test)"
-	@echo "  clean      Clean build artifacts"
-	@echo "  dev        Sync development dependencies"
-	@echo "  format     Format code with ruff"
-	@echo "  install    Install the package in editable mode"
+	@echo "  build         Build distribution packages (wheel and sdist)"
+	@echo "  check         Run all checks (lint + test)"
+	@echo "  clean         Clean build artifacts"
+	@echo "  dev           Sync development dependencies"
+	@echo "  format        Format code with ruff"
+	@echo "  install       Install the package in editable mode"
 	@echo "  install-debug Install package with optimizations and debug symbols (-O3 -g)"
-	@echo "  lint       Run linting tools"
-	@echo "  publish    Publish to PyPI"
-	@echo "  publish-test Publish to Test PyPI"
-	@echo "  test       Run unit tests with pytest"
+	@echo "  lint          Run linting tools"
+	@echo "  publish       Publish to PyPI"
+	@echo "  publish-test  Publish to Test PyPI"
+	@echo "  repair-wheels Repair wheels for manylinux compatibility"
+	@echo "  test          Run unit tests with pytest"
 	@echo "  test-examples Run example scripts"
-	@echo "  help       Show this help message"
+	@echo "  help          Show this help message"
 
 # Build distribution packages
 build:
-	uv build
+	DEBUG=0 uv build
 
 # Run all checks
 check: lint test
@@ -59,31 +60,19 @@ lint:
 	uv run --group lint ruff check .
 	uv run --group lint mypy knndbscan/ || true
 
-# Publish to Test PyPI
-publish-test:
-	@echo "Building package..."
-	uv build
+# Repair wheels for manylinux compatibility
+repair-wheels:
 	@echo "Repairing wheels for manylinux compatibility..."
-	@if command -v auditwheel >/dev/null 2>&1; then \
-		echo "Using auditwheel to repair wheels..."; \
-		for wheel in dist/*.whl; do \
-			if [[ "$$wheel" == *"linux_x86_64.whl" ]]; then \
-				echo "Repairing $$wheel"; \
-				auditwheel repair "$$wheel" --plat manylinux_2_39_x86_64 -w dist/; \
-				rm "$$wheel"; \
-			fi; \
-		done; \
-	else \
-		echo "auditwheel not found. Installing..."; \
-		uv run pip install auditwheel; \
-		for wheel in dist/*.whl; do \
-			if [[ "$$wheel" == *"linux_x86_64.whl" ]]; then \
-				echo "Repairing $$wheel"; \
-				uv run auditwheel repair "$$wheel" --plat manylinux_2_39_x86_64 -w dist/; \
-				rm "$$wheel"; \
-			fi; \
-		done; \
-	fi
+	for wheel in dist/*.whl; do \
+		if [[ "$$wheel" == *"linux_x86_64.whl" ]]; then \
+			echo "Repairing $$wheel"; \
+			uv run auditwheel repair "$$wheel" --plat manylinux_2_39_x86_64 -w dist/; \
+			rm "$$wheel"; \
+		fi; \
+	done
+
+# Publish to Test PyPI
+publish-test: build repair-wheels
 	@echo "Publishing to Test PyPI..."
 	@if [ ! -f "$$HOME/.pypirc" ] && [ -z "$$TWINE_PASSWORD" ]; then \
 		echo "ERROR: Authentication required. Either:"; \
@@ -96,30 +85,7 @@ publish-test:
 	uv publish --publish-url https://test.pypi.org/legacy/
 
 # Publish to PyPI
-publish:
-	@echo "Building package..."
-	uv build
-	@echo "Repairing wheels for manylinux compatibility..."
-	@if command -v auditwheel >/dev/null 2>&1; then \
-		echo "Using auditwheel to repair wheels..."; \
-		for wheel in dist/*.whl; do \
-			if [[ "$$wheel" == *"linux_x86_64.whl" ]]; then \
-				echo "Repairing $$wheel"; \
-				auditwheel repair "$$wheel" --plat manylinux_2_39_x86_64 -w dist/; \
-				rm "$$wheel"; \
-			fi; \
-		done; \
-	else \
-		echo "auditwheel not found. Installing..."; \
-		uv run pip install auditwheel; \
-		for wheel in dist/*.whl; do \
-			if [[ "$$wheel" == *"linux_x86_64.whl" ]]; then \
-				echo "Repairing $$wheel"; \
-				uv run auditwheel repair "$$wheel" --plat manylinux_2_39_x86_64 -w dist/; \
-				rm "$$wheel"; \
-			fi; \
-		done; \
-	fi
+publish: build repair-wheels
 	@echo "Publishing to PyPI..."
 	@if [ ! -f "$$HOME/.pypirc" ] && [ -z "$$TWINE_PASSWORD" ]; then \
 		echo "ERROR: Authentication required. Either:"; \
@@ -130,9 +96,6 @@ publish:
 		exit 1; \
 	fi
 	uv publish
-	rm -rf build/
-	rm -rf dist/
-	rm -rf htmlcov/
 
 # Run all tests
 test:
