@@ -37,7 +37,6 @@ jobs:
     - name: Install dependencies and package
       run: |
         uv sync --locked --all-groups
-        uv run pip install -e .
     
     - name: Run linting
       run: make lint
