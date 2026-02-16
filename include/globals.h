@@ -1,23 +1,23 @@
 #ifndef _globals
 #define _globals
 
-#include <cstdlib>
-#include <iostream>
-#include <fstream>
-#include <omp.h>
-#include <mpi.h>
 #include <assert.h>
-#include <vector>
-#include <string>
-#include <cmath>
-#include <math.h>
 #include <bits/stdc++.h>
-#include <time.h>
-#include <algorithm>
-#include <map>
-#include <iterator>
 #include <getopt.h>
+#include <math.h>
+#include <mpi.h>
+#include <omp.h>
+#include <time.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <map>
+#include <string>
+#include <vector>
 
 using namespace std;
 extern int maxk;
@@ -31,37 +31,36 @@ extern vector<int> jlabels;
 extern vector<int> II;
 extern vector<int> JJ;
 
-typedef int point_int; // number of points
+typedef int point_int;  // number of points
 
-typedef long long int edge_int; // number of edges
+typedef long long int edge_int;  // number of edges
 
-struct Edge{
+struct Edge {
     point_int j;
     float w;
 };
 
-struct fullEdge{
+struct fullEdge {
     point_int i;
     point_int j;
     float w;
 };
 
-struct Cycle{
+struct Cycle {
     point_int i;
     point_int j;
 };
 
-#pragma omp declare reduction(vec_plus : vector<int> : \
-                              transform(omp_out.begin(), omp_out.end(), omp_in.begin(), omp_out.begin(), plus<int>())) \
-                    initializer(omp_priv = decltype(omp_orig)(omp_orig.size()))
-#pragma omp declare reduction (merge_pointint : vector<point_int> : omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
-#pragma omp declare reduction (merge_edgeint : vector<edge_int> : omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
-#pragma omp declare reduction (merge_fullEdge : vector<fullEdge> : omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
-#pragma omp declare reduction (merge_Cycle : vector<Cycle> : omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
+#pragma omp declare reduction(vec_plus : vector<int> : transform(                      \
+        omp_out.begin(), omp_out.end(), omp_in.begin(), omp_out.begin(), plus<int>())) \
+    initializer(omp_priv = decltype(omp_orig)(omp_orig.size()))
+#pragma omp declare reduction(merge_pointint : vector<point_int> : omp_out.insert( \
+        omp_out.end(), omp_in.begin(), omp_in.end()))
+#pragma omp declare reduction(merge_edgeint : vector<edge_int> : omp_out.insert( \
+        omp_out.end(), omp_in.begin(), omp_in.end()))
+#pragma omp declare reduction(merge_fullEdge : vector<fullEdge> : omp_out.insert( \
+        omp_out.end(), omp_in.begin(), omp_in.end()))
+#pragma omp declare reduction(merge_Cycle : vector<Cycle> : omp_out.insert( \
+        omp_out.end(), omp_in.begin(), omp_in.end()))
 
 #endif
-
-
-
-
-
