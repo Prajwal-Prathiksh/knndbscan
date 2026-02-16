@@ -67,7 +67,9 @@ def run_benchmark(
     # --- knndbscan ---
     print(f"Running knndbscan [eps={eps}, min_samples={min_samples}]...")
     start = time.perf_counter()
-    labels_knn = knn_dbscan(X, eps=eps, min_samples=min_samples, n_jobs=-1)
+    labels_knn = knn_dbscan(
+        X, eps=eps, min_samples=min_samples, n_jobs=-1, device="cpu"
+    )
     duration_knn = time.perf_counter() - start
 
     n_clus_knn = len(set(labels_knn)) - (1 if -1 in labels_knn else 0)
@@ -136,15 +138,15 @@ if __name__ == "__main__":
     X_blobs, _ = make_blobs(  # type: ignore
         n_samples=n_samples,
         centers=n_blobs,
-        cluster_std=0.1,
+        cluster_std=0.2,
         random_state=seed,
     )
     run_benchmark(
         X_blobs,
-        "Blobs",
+        dataset_name="Blobs",
         n_clusters=n_blobs,
         eps=0.5,
-        min_samples=20,
+        min_samples=10,
         seed=seed,
         figs_dir=FIGS_DIR,
     )
@@ -154,7 +156,7 @@ if __name__ == "__main__":
     X_moons, _ = make_moons(n_samples=n_samples, noise=0.05, random_state=seed)
     run_benchmark(
         X_moons,
-        "Moons",
+        dataset_name="Moons",
         n_clusters=2,
         eps=0.2,
         min_samples=10,
