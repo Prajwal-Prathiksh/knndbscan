@@ -16,7 +16,7 @@ vector<int> II;
 vector<int> JJ;
 
 
-vector<point_int> knndbscan(const point_int N, const float eps_value, const int minPts_value, const int maxk_value, const point_int *JA, const float *A)
+vector<point_int> knndbscan(const point_int N, const float eps_value, const int minPts_value, const int maxk_value, const point_int *JA, const float *A, bool verbose)
 {
     //initialize basic parameters
     int rank, nprocs;
@@ -53,7 +53,7 @@ vector<point_int> knndbscan(const point_int N, const float eps_value, const int 
     }
     point_int n_core = core.size();
     int n_ALLcore = countall(n_core);
-    if(rank == 0) cout<<"\ntotal number of core points:"<<n_ALLcore<<" (eps= " <<eps << ", minPts=" << minPts << ")"<<endl;
+    if(rank == 0 && verbose) cout<<"\ntotal number of core points:"<<n_ALLcore<<" (eps= " <<eps << ", minPts=" << minPts << ")"<<endl;
 
     //II: construct local mst and select crossE: C, R, crossE
     int n_tree;
@@ -63,7 +63,7 @@ vector<point_int> knndbscan(const point_int N, const float eps_value, const int 
     int nE = crossE.size();
     MPI_Barrier(MPI_COMM_WORLD);
     double t_local = MPI_Wtime();
-    if(rank == 0)  printf("local mst construction time: %.3E\n",  t_local - t0);
+    if(rank == 0 && verbose)  printf("local mst construction time: %.3E\n",  t_local - t0);
 
         //cunt cross edges #s:
     vector<int> nEs(gsize);
@@ -90,7 +90,7 @@ MPI_Barrier(MPI_COMM_WORLD);
     update_cutedges(n0, ISTART, R, label, JA, A, crossE); 
     MPI_Barrier(MPI_COMM_WORLD);
     double t_cutE = MPI_Wtime(); 
-    if(rank == 0)  printf("update cut edges time: %.3E\n", t_cutE - t_local);
+    if(rank == 0 && verbose)  printf("update cut edges time: %.3E\n", t_cutE - t_local);
 
     //V: construct cut mst: R
     vector<int> roots;
@@ -112,7 +112,7 @@ MPI_Barrier(MPI_COMM_WORLD);
     }
     MPI_Barrier(MPI_COMM_WORLD);
     double t_cutmst = MPI_Wtime();
-    if(rank == 0)  printf("construct cut mst time: %.3E\n",  t_cutmst - t_cutE);
+    if(rank == 0 && verbose)  printf("construct cut mst time: %.3E\n",  t_cutmst - t_cutE);
 
     //VI: mark border points
     label_borders(n0, n, ISTART, R, JA, A);
@@ -120,7 +120,7 @@ MPI_Barrier(MPI_COMM_WORLD);
     double t_end = MPI_Wtime();
 
     //summary
-    if(rank ==0){
+    if(rank ==0 && verbose){
         printf("total clustering time: %.3E\n", t_end-t0);     
         printf("*** cut edges number (max, min, average) : %.3E   %.3E   %.3E\n\n", (double)max_nE, (double)min_nE, avg_nE);
 
@@ -128,8 +128,3 @@ MPI_Barrier(MPI_COMM_WORLD);
     }
     return R;
 }
-
-
-
-
-

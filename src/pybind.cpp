@@ -10,7 +10,7 @@
 
 namespace py = pybind11;
 
-py::array_t<int> knndbscan_py(int N, float eps, int minPts, int k, py::array_t<int> JA_np, py::array_t<float> A_np, int threads = 1)
+py::array_t<int> knndbscan_py(int N, float eps, int minPts, int k, py::array_t<int> JA_np, py::array_t<float> A_np, int threads = 1, bool verbose = false)
 {
     // Initialize MPI if not already initialized
     int initialized;
@@ -35,7 +35,7 @@ py::array_t<int> knndbscan_py(int N, float eps, int minPts, int k, py::array_t<i
     float *A = static_cast<float *>(A_buf.ptr);
 
     // Call the clustering function
-    std::vector<point_int> labels = knndbscan(N, eps, minPts, k, JA, A);
+    std::vector<point_int> labels = knndbscan(N, eps, minPts, k, JA, A, verbose);
 
     // Don't finalize MPI here - let it persist for multiple calls
     // MPI will be finalized when the Python process exits
@@ -66,6 +66,8 @@ Args:
                                 Shape should be (N * k,), stored in row-major order.
     threads (int, optional): Number of OpenMP threads to use for parallel computation.
                              Defaults to 1 (single-threaded).
+    verbose (bool, optional): Whether to print timing and debug information.
+                              Defaults to False.
 
 Returns:
     numpy.ndarray of int: Cluster labels for each point. Shape is (N,).
@@ -82,5 +84,5 @@ Note:
     MPI is initialized automatically if not already done, but not finalized to allow
     multiple calls within the same Python process.
 )doc",
-          py::arg("N"), py::arg("eps"), py::arg("minPts"), py::arg("k"), py::arg("JA"), py::arg("A"), py::arg("threads") = 1);
+          py::arg("N"), py::arg("eps"), py::arg("minPts"), py::arg("k"), py::arg("JA"), py::arg("A"), py::arg("threads") = 1, py::arg("verbose") = false);
 }
