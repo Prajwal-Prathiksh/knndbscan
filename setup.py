@@ -24,7 +24,24 @@ def get_mpi_flags():
         return ["-I/usr/include/mpi"], ["-lmpi"]
 
 
+def get_openmp_flag():
+    """Detect OpenMP flag based on compiler."""
+    try:
+        # Check if using IBM XL compiler
+        version_output = subprocess.check_output(
+            ["mpicxx", "--version"], text=True, stderr=subprocess.STDOUT
+        )
+        if "xl" in version_output.lower() or "ibm" in version_output.lower():
+            return "-qopenmp"
+    except Exception:
+        pass
+
+    # Default to GCC/Clang flag
+    return "-fopenmp"
+
+
 mpi_compile_flags, mpi_link_flags = get_mpi_flags()
+openmp_flag = get_openmp_flag()
 
 ext_modules = [
     Pybind11Extension(
@@ -33,13 +50,13 @@ ext_modules = [
         include_dirs=["include"],
         extra_compile_args=[
             "-O3",
-            "-fopenmp",
+            openmp_flag,
             "-Wno-unused-variable",
             "-Wno-unused-value",
             "-Wno-sign-compare",
         ]
         + mpi_compile_flags,
-        extra_link_args=["-fopenmp"] + mpi_link_flags,
+        extra_link_args=[openmp_flag] + mpi_link_flags,
     ),
 ]
 
