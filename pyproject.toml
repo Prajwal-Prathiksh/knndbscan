@@ -55,6 +55,7 @@ ignore = [
     "E501", # Line too long (handled by formatter)
     "N803", # Allow non-standard naming (e.g., single-letter variables) in some contexts
     "N806", # Allow mathematical variable names (e.g., N, A, JA, minPts) in some contexts
+    "N811", # Allow non-standard naming for class attributes in some contexts
     "T201", # Allow print statements in examples
 ]
 

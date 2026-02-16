@@ -25,8 +25,8 @@ if _AUTO_CONFIGURE_MPI:
 
 
 # Import C++ extension after configuring environment
-from ._core import run_knndbscan
-from .runner import knn_dbscan
+from ._core import run_knndbscan  # noqa: E402
+from .runner import knn_dbscan  # noqa: E402
 
 __version__ = "0.1.0"
 __all__ = ["knn_dbscan", "run_knndbscan"]
