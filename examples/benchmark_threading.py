@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Threading Benchmark for k-NN DBSCAN core (knndbscan.knndbscan).
+Threading Benchmark for k-NN DBSCAN core (knndbscan.run_knndbscan).
 
 - Generates a deterministic synthetic k-NN graph (exact shape you need), so that
   k-NN build time doesn't dominate and you can focus on the clustering kernel.
@@ -8,18 +8,18 @@ Threading Benchmark for k-NN DBSCAN core (knndbscan.knndbscan).
 - Prints a neat summary and saves pretty plots (PNG/PDF).
 """
 
+import multiprocessing as mp
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import multiprocessing as mp
 
-from knndbscan import knndbscan
+from knndbscan import run_knndbscan
 
-SCRIPT_DIRECTORY = Path(__file__).parent.resolve()
-FIGURES_DIRECTORY = SCRIPT_DIRECTORY / "figures"
+ROOT_DIR = Path(__file__).parent.parent.resolve()
+FIGURES_DIRECTORY = ROOT_DIR / "figures"
 FIGURES_DIRECTORY.mkdir(exist_ok=True, parents=True)
 
 # Constants
@@ -34,7 +34,7 @@ DIST_RANGE = (0.0, 200.0)  # range for synthetic distances
 # Benchmarking
 num_workers = mp.cpu_count()
 if num_workers <= 16:
-    THREAD_COUNTS = np.array(num_workers, dtype=int)
+    THREAD_COUNTS = np.arange(1, num_workers + 1, dtype=int)
 else:
     THREAD_COUNTS = np.linspace(1, num_workers, num=min(20, num_workers), dtype=int)
 
@@ -135,7 +135,7 @@ def run_knndbscan_once(
     Run the core DBSCAN once and return (labels, elapsed_time_seconds).
     """
     start = time.perf_counter()
-    labels = knndbscan(n, eps, min_pts, k, JA, A, threads=threads)
+    labels = run_knndbscan(n, eps, min_pts, k, JA, A, threads=threads)
     elapsed = time.perf_counter() - start
     return labels, elapsed
 
