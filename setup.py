@@ -1,7 +1,13 @@
+import os
 import subprocess
 
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 from setuptools import setup
+
+
+def check_env_flag(name: str) -> bool:
+    """Check if environment variable is set to enable a feature."""
+    return os.getenv(name, "0").upper() in ["1", "ON", "YES", "TRUE"]
 
 
 def get_mpi_flags():
@@ -32,31 +38,37 @@ def get_openmp_flag():
             ["mpicxx", "--version"], text=True, stderr=subprocess.STDOUT
         )
         if "xl" in version_output.lower() or "ibm" in version_output.lower():
-            return "-qopenmp"
+            return ["-qopenmp"]
     except Exception:
         pass
 
     # Default to GCC/Clang flag
-    return "-fopenmp"
+    return ["-fopenmp"]
 
 
 mpi_compile_flags, mpi_link_flags = get_mpi_flags()
 openmp_flag = get_openmp_flag()
+
+# Build configuration based on environment variables
+extra_compile_args = [
+    "-Wno-unused-variable",
+    "-Wno-unused-value",
+    "-Wno-sign-compare",
+    "-O3",
+]
+
+# Build with debug symbols
+if check_env_flag("DEBUG"):
+    extra_compile_args.append("-g")
+
 
 ext_modules = [
     Pybind11Extension(
         "knndbscan._core",
         ["src/pybind.cpp", "src/clusters.cpp"],
         include_dirs=["include"],
-        extra_compile_args=[
-            "-O3",
-            openmp_flag,
-            "-Wno-unused-variable",
-            "-Wno-unused-value",
-            "-Wno-sign-compare",
-        ]
-        + mpi_compile_flags,
-        extra_link_args=[openmp_flag] + mpi_link_flags,
+        extra_link_args=openmp_flag + mpi_link_flags,
+        extra_compile_args=extra_compile_args + openmp_flag + mpi_compile_flags,
     ),
 ]
 

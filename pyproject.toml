@@ -1,17 +1,22 @@
 [project]
 name = "knndbscan"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python wrapper to a parallel implementation of kNN-DBSCAN given k-NNG using MPI and OpenMP."
 readme = "README.md"
 requires-python = ">=3.13"
-keywords = ["clustering", "dbscan", "knn", "mpi", "openmp", "parallel"]
+# license = "MIT" # TODO
+keywords = ["clustering", "dbscan", "knn", "mpi", "openmp", "parallel", "machine-learning", "data-mining"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
     "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: C++",
+    "Operating System :: POSIX :: Linux",
 ]
 dependencies = [
     "matplotlib>=3.10.6",
@@ -80,6 +85,7 @@ addopts = "--cov=knndbscan --cov-report=html --cov-report=term-missing"
 
 [dependency-groups]
 dev = [
+    "auditwheel>=6.4.2",
     "pybind11>=3.0.1",
     "setuptools>=80.9.0",
 ]
