@@ -1,7 +1,7 @@
 [project]
 name = "knndbscan"
 version = "0.1.1"
-description = "Python wrapper to a parallel implementation of kNN-DBSCAN given k-NNG using MPI and OpenMP."
+description = "Python wrapper to a parallel implementation of kNN-DBSCAN using MPI and OpenMP."
 readme = "README.md"
 requires-python = ">=3.13"
 # license = "MIT" # TODO

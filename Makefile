@@ -1,3 +1,5 @@
+.PHONY: test
+
 # Default target
 help:
 	@echo "Available targets:"
