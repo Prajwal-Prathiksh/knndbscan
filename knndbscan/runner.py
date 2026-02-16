@@ -158,6 +158,6 @@ def knn_dbscan(
 
     # Return same type as input
     if input_is_cupy and cp is not None:
-        return cp.asarray(labels)
+        return cp.asarray(labels)  # type: ignore
 
     return labels

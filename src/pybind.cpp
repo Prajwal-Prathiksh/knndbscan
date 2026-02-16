@@ -24,7 +24,7 @@ py::array_t<int> knndbscan_py(int N, float eps, int minPts, int k,
         MPI_Init_thread(NULL, NULL, MPI_THREAD_SERIALIZED, &provided);
     }
 
-    omp_set_dynamic(0);            // Disable dynamic teams
+    omp_set_dynamic(0);                // Disable dynamic teams
     omp_set_num_threads(mpi_threads);  // Set number of threads for OpenMP
 
     // Get buffer info from numpy arrays

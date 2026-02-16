@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
     {
         nthreads = omp_get_num_threads();
     }
-    
+
     if (rank == 0) {
         cout << "number of process: " << gsize << endl;
         cout << "threads per MPI task: " << nthreads << endl;
@@ -166,7 +166,7 @@ int main(int argc, char** argv) {
                 MPI_COMM_WORLD);
     ofstream fout;
     fout.open(label_file);
-    
+
     if (rank == 0) {
         for (int i = 0; i < N; i++) {
             fout << labels[i] << "\n";
