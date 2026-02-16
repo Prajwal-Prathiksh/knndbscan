@@ -46,7 +46,7 @@ py::array_t<int> knndbscan_py(int N, float eps, int minPts, int k, py::array_t<i
 
 PYBIND11_MODULE(_core, m)
 {
-    m.def("knndbscan", &knndbscan_py, R"doc(
+    m.def("run_knndbscan", &knndbscan_py, R"doc(
 Perform kNN-DBSCAN clustering on a dataset using a precomputed k-nearest neighbors graph.
 
 This function implements a variant of DBSCAN that uses a k-nearest neighbors (kNN) graph

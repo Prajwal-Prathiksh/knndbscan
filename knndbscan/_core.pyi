@@ -3,7 +3,7 @@ from typing import Annotated
 import numpy as np
 import numpy.typing as npt
 
-def knndbscan(
+def run_knndbscan(
     N: int,
     eps: float,
     minPts: int,
