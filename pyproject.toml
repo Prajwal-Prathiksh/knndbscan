@@ -14,6 +14,7 @@ classifiers = [
     "Programming Language :: C++",
 ]
 dependencies = [
+    "matplotlib>=3.10.6",
     "numpy>=2.3.3",
     "pip>=26.0.1",
     "scikit-learn>=1.7.2",
@@ -39,12 +40,12 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "B", "A", "C4", "PIE", "T20", "UP"]
-ignore = ["E501"]  # Line too long (handled by formatter)
-
-[tool.ruff.lint.per-file-ignores]
-"examples/*.py" = ["T201", "N803", "N806"]  # Allow print statements and non-standard naming in examples
-"test/*.py" = ["N806"]  # Allow mathematical variable names in tests (N, A, JA, minPts)
-"*.pyi" = ["N803"]  # Allow non-standard naming in type stubs
+ignore = [
+    "E501", # Line too long (handled by formatter)
+    "N803", # Allow non-standard naming (e.g., single-letter variables) in some contexts
+    "N806", # Allow mathematical variable names (e.g., N, A, JA, minPts) in some contexts
+    "T201", # Allow print statements in examples
+]  
 
 # MyPy configuration
 [tool.mypy]
@@ -52,6 +53,11 @@ python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "sklearn.*"
+ignore_missing_imports = true
+
 
 # Pytest configuration
 [tool.pytest.ini_options]
@@ -62,7 +68,6 @@ addopts = "--cov=knndbscan --cov-report=html --cov-report=term-missing"
 
 [dependency-groups]
 dev = [
-    "matplotlib>=3.10.6",
     "pybind11>=3.0.1",
     "setuptools>=80.9.0",
 ]

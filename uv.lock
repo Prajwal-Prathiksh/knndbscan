@@ -251,6 +251,7 @@ name = "knndbscan"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "matplotlib" },
     { name = "numpy" },
     { name = "pip" },
     { name = "scikit-learn" },
@@ -258,7 +259,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "matplotlib" },
     { name = "pybind11" },
     { name = "setuptools" },
 ]
@@ -273,6 +273,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "matplotlib", specifier = ">=3.10.6" },
     { name = "numpy", specifier = ">=2.3.3" },
     { name = "pip", specifier = ">=26.0.1" },
     { name = "scikit-learn", specifier = ">=1.7.2" },
@@ -280,7 +281,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "matplotlib", specifier = ">=3.10.6" },
     { name = "pybind11", specifier = ">=3.0.1" },
     { name = "setuptools", specifier = ">=80.9.0" },
 ]
