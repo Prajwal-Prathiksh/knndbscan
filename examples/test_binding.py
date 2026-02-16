@@ -237,7 +237,7 @@ def main():
 
     # Run clustering
     t1 = time.perf_counter()
-    labels_pred = run_knndbscan(N, eps, minPts, k, JA, A, threads=THREADS)
+    labels_pred = run_knndbscan(N, eps, minPts, k, JA, A, mpi_threads=THREADS)
     t2 = time.perf_counter()
     print(f"Clustering took {t2 - t1:.2f} seconds")
 

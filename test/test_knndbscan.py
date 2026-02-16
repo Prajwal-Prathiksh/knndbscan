@@ -29,8 +29,8 @@ def test_run_knndbscan_threading():
     A = np.random.uniform(0.1, 2.0, size=N * k).astype(np.float32)
 
     # Test with different thread counts
-    labels_1 = run_knndbscan(N, eps, minPts, k, JA, A, threads=1)
-    labels_2 = run_knndbscan(N, eps, minPts, k, JA, A, threads=2)
+    labels_1 = run_knndbscan(N, eps, minPts, k, JA, A, mpi_threads=1)
+    labels_2 = run_knndbscan(N, eps, minPts, k, JA, A, mpi_threads=2)
 
     # Results should be consistent across thread counts
     assert len(labels_1) == len(labels_2) == N, "Label array length mismatch"
@@ -74,13 +74,13 @@ def test_run_knndbscan_small_dataset():
         dtype=np.float32,
     )
 
-    labels = run_knndbscan(N, eps, minPts, k, JA, A, threads=1)
+    labels = run_knndbscan(N, eps, minPts, k, JA, A, mpi_threads=1)
 
     # With large distances and small eps, most/all points should be noise (-1)
     assert len(labels) == N, f"Expected {N} labels, got {len(labels)}"
-    assert isinstance(labels, np.ndarray), (
-        f"Expected labels to be a numpy array, got {type(labels)}"
-    )
+    assert isinstance(
+        labels, np.ndarray
+    ), f"Expected labels to be a numpy array, got {type(labels)}"
     assert labels.dtype == np.int32, "Expected labels to be int32"
 
     # Check that we get some result (could be all noise with these parameters)

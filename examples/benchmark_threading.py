@@ -135,7 +135,7 @@ def run_knndbscan_once(
     Run the core DBSCAN once and return (labels, elapsed_time_seconds).
     """
     start = time.perf_counter()
-    labels = run_knndbscan(n, eps, min_pts, k, JA, A, threads=threads)
+    labels = run_knndbscan(n, eps, min_pts, k, JA, A, mpi_threads=threads)
     elapsed = time.perf_counter() - start
     return labels, elapsed
 
@@ -200,16 +200,7 @@ def print_summary(results: dict[int, BenchResult]) -> None:
         )
 
     max_speed = max((baseline / results[t].time_avg for t in thread_list), default=1.0)
-    print("\nCONCLUSION:")
-    if max_speed > 1.5:
-        print(f"Good threading scalability achieved! Max speedup: {max_speed:.1f}x")
-    else:
-        print("Limited threading benefits observed. Possible reasons:")
-        print("- Parallel regions not on the critical path")
-        print(
-            "- Synthetic graph not stressing parallel code paths similarly to real data"
-        )
-        print("- Memory bandwidth, NUMA effects, or oversubscription")
+    print(f"\nMax speedup achieved: {max_speed:.2f}× over single-threaded baseline")
 
 
 def make_plots(results: dict[int, BenchResult], figure_path: Path) -> None:

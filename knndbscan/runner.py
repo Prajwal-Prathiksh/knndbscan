@@ -70,7 +70,7 @@ def knndbscan(
         k=current_k,
         JA=JA,
         A=A,
-        threads=n_jobs,
+        mpi_threads=n_jobs,
         verbose=verbose,
     )
 

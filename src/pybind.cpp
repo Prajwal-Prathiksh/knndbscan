@@ -13,7 +13,7 @@ namespace py = pybind11;
 
 py::array_t<int> knndbscan_py(int N, float eps, int minPts, int k,
                               py::array_t<int> JA_np, py::array_t<float> A_np,
-                              int threads = 1, bool verbose = false) {
+                              int mpi_threads = 1, bool verbose = false) {
     // Initialize MPI if not already initialized
     int initialized;
     MPI_Initialized(&initialized);
@@ -25,7 +25,7 @@ py::array_t<int> knndbscan_py(int N, float eps, int minPts, int k,
     }
 
     omp_set_dynamic(0);            // Disable dynamic teams
-    omp_set_num_threads(threads);  // Set number of threads for OpenMP
+    omp_set_num_threads(mpi_threads);  // Set number of threads for OpenMP
 
     // Get buffer info from numpy arrays
     auto JA_buf = JA_np.request();
@@ -64,7 +64,7 @@ Args:
                                Shape should be (N * k,), stored in row-major order.
     A (numpy.ndarray of float): Array of distances corresponding to the neighbors in JA.
                                 Shape should be (N * k,), stored in row-major order.
-    threads (int, optional): Number of OpenMP threads to use for parallel computation.
+    mpi_threads (int, optional): Number of OpenMP threads to use for parallel computation.
                              Defaults to 1 (single-threaded).
     verbose (bool, optional): Whether to print timing and debug information.
                               Defaults to False.
@@ -85,5 +85,5 @@ Note:
     multiple calls within the same Python process.
 )doc",
           py::arg("N"), py::arg("eps"), py::arg("minPts"), py::arg("k"), py::arg("JA"),
-          py::arg("A"), py::arg("threads") = 1, py::arg("verbose") = false);
+          py::arg("A"), py::arg("mpi_threads") = 1, py::arg("verbose") = false);
 }
