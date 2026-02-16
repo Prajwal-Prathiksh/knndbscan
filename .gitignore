@@ -262,3 +262,6 @@ test/knndbscan
 
 # VSCode files
 .vscode/
+
+# Figures
+figures/
