@@ -39,10 +39,12 @@ test-examples:
 lint:
 	uv run --group lint ruff check .
 	uv run --group lint mypy knndbscan/ || true
+	uv run --group lint clang-format --dry-run --Werror src/*.cpp include/*.h test/*.cpp
 
 # Format code
 format:
 	uv run --group lint ruff format .
+	uv run --group lint clang-format -i src/*.cpp include/*.h test/*.cpp
 
 # Run all checks
 check: lint test
