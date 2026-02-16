@@ -4,6 +4,7 @@
 help:
 	@echo "Available targets:"
 	@echo "  install    Install the package in editable mode"
+	@echo "  install-gpu Install the package with GPU support in editable mode"
 	@echo "  build      Build distribution packages (wheel and sdist)"
 	@echo "  dev        Sync development dependencies"
 	@echo "  test       Run unit tests with pytest"
@@ -21,6 +22,10 @@ dev:
 # Sync development dependencies and install package in editable mode
 install: dev
 	uv run pip install -e .
+
+# Sync development dependencies and install package in editable mode with GPU support
+install-gpu: dev
+	uv run pip install -e .[gpu]
 
 # Build distribution packages
 build:
