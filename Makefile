@@ -6,7 +6,6 @@ help:
 	@echo "  install    Install the package in editable mode"
 	@echo "  install-gpu Install the package with GPU support in editable mode"
 	@echo "  build      Build distribution packages (wheel and sdist)"
-	@echo "  dev        Sync development dependencies"
 	@echo "  test       Run unit tests with pytest"
 	@echo "  test-examples Run example scripts"
 	@echo "  lint       Run linting tools"
@@ -15,17 +14,15 @@ help:
 	@echo "  clean      Clean build artifacts"
 	@echo "  help       Show this help message"
 
-# Sync all dependency groups
-dev:
-	uv sync --all-groups
-
 # Sync development dependencies and install package in editable mode
 install: dev
+	uv sync --all-groups
 	uv run pip install -e .
 
-# Sync development dependencies and install package in editable mode with GPU support
-install-gpu: dev
-	uv run pip install -e .[gpu]
+# Sync with GPU support and build C++ extension
+install-gpu:
+	uv sync --all-groups --extra gpu
+	uv run pip install -e .
 
 # Build distribution packages
 build:
