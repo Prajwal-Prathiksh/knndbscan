@@ -53,6 +53,11 @@ def knn_dbscan(
     Returns:
         numpy.ndarray of int: Cluster labels for each point. Shape is (n_samples,).
             Noisy samples are given the label -1.
+
+    Note:
+        The library automatically configures OpenMPI environment variables for optimal
+        single-node performance. To disable this and use custom MPI settings, set:
+        ``export KNNDBSCAN_AUTO_CONFIGURE_MPI=0`` before importing knndbscan.
     """
     if HAS_GPU and isinstance(X, (cp.ndarray,)):  # type: ignore
         X_arr = X
