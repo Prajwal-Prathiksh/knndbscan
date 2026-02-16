@@ -14,6 +14,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import multiprocessing as mp
 
 from knndbscan import knndbscan
 
@@ -31,7 +32,12 @@ RNG_SEED = 42
 DIST_RANGE = (0.0, 200.0)  # range for synthetic distances
 
 # Benchmarking
-THREAD_COUNTS = [1, 2, 4, 6, 8, 10, 12, 14, 16]
+num_workers = mp.cpu_count()
+if num_workers <= 16:
+    THREAD_COUNTS = np.array(num_workers, dtype=int)
+else:
+    THREAD_COUNTS = np.linspace(1, num_workers, num=min(20, num_workers), dtype=int)
+
 N_RUNS_PER_SETTING = 3  # repetitions for each thread count
 
 # Output
@@ -150,7 +156,7 @@ def benchmark_over_threads(
     k: int,
     JA: np.ndarray,
     A: np.ndarray,
-    thread_counts: list[int],
+    thread_counts: np.ndarray,
     n_runs: int,
 ) -> dict[int, BenchResult]:
     """
