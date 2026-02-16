@@ -11,6 +11,7 @@ def run_knndbscan(
     JA: Annotated[npt.ArrayLike, npt.int32],
     A: Annotated[npt.ArrayLike, npt.float32],
     threads: int = 1,
+    verbose: bool = False,
 ) -> npt.NDArray[np.int32]:
     """Perform kNN-DBSCAN clustering on a dataset using a precomputed k-nearest neighbors
     graph.
@@ -32,6 +33,8 @@ def run_knndbscan(
             JA. Shape should be (N * k,), stored in row-major order.
         threads (int, optional): Number of OpenMP threads to use for parallel computation.
             Defaults to 1 (single-threaded).
+        verbose (bool, optional): Whether to print timing and debug information.
+            Defaults to False.
 
     Returns:
         numpy.ndarray of int: Cluster labels for each point. Shape is (N,).

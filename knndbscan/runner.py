@@ -14,6 +14,7 @@ def knndbscan(
     eps: float,
     min_samples: int,
     n_jobs: int = 1,
+    verbose: bool = False,
 ) -> npt.NDArray[np.int32]:
     """Perform kNN-DBSCAN clustering on vector array X.
 
@@ -25,6 +26,8 @@ def knndbscan(
             (core point). This includes the point itself.
         n_jobs (int, optional): Number of parallel threads/jobs to use for both neighbor
             search and clustering. Defaults to 1. Set to -1 to use all processors.
+        verbose (bool, optional): Whether to print timing and debug information from the
+            core C++ implementation. Defaults to False.
 
     Returns:
         numpy.ndarray of int: Cluster labels for each point. Shape is (n_samples,).
@@ -68,6 +71,7 @@ def knndbscan(
         JA=JA,
         A=A,
         threads=n_jobs,
+        verbose=verbose,
     )
 
     return labels
