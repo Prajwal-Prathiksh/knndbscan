@@ -1,6 +1,5 @@
 import time
 from pathlib import Path
-from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,9 +16,9 @@ def run_benchmark(
     eps,
     min_samples,
     seed=0,
-    figs_dir: Optional[Path] = None,
+    figs_dir: Path | None = None,
 ):
-    print(f"\n{'='*20} Benchmarking on {dataset_name} {'='*20}")
+    print(f"\n{'=' * 20} Benchmarking on {dataset_name} {'=' * 20}")
     print(f"Data shape: {X.shape}")
 
     results = []
