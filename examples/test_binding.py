@@ -7,10 +7,10 @@ from sklearn import metrics
 from sklearn.datasets import make_moons
 from sklearn.neighbors import NearestNeighbors
 
-from knndbscan import knndbscan
+from knndbscan import run_knndbscan
 
-SCRIPT_DIRECTORY = Path(__file__).parent.resolve()
-FIGURES_DIRECTORY = SCRIPT_DIRECTORY / "figures"
+ROOT_DIR = Path(__file__).parent.parent.resolve()
+FIGURES_DIRECTORY = ROOT_DIR / "figures"
 FIGURES_DIRECTORY.mkdir(exist_ok=True, parents=True)
 
 # Constants
@@ -237,7 +237,7 @@ def main():
 
     # Run clustering
     t1 = time.perf_counter()
-    labels_pred = knndbscan(N, eps, minPts, k, JA, A, threads=THREADS)
+    labels_pred = run_knndbscan(N, eps, minPts, k, JA, A, mpi_threads=THREADS)
     t2 = time.perf_counter()
     print(f"Clustering took {t2 - t1:.2f} seconds")
 

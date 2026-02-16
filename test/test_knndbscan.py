@@ -3,11 +3,11 @@
 import numpy as np
 import pytest
 
-from knndbscan import knndbscan
+from knndbscan import knn_dbscan, run_knndbscan
 
 
-def test_knndbscan_threading():
-    """Test multi-threading functionality."""
+def test_run_knndbscan_threading():
+    """Test multi-threading functionality of the core C++ binding."""
     N = 100
     k = 5
     eps = 1.5
@@ -29,8 +29,8 @@ def test_knndbscan_threading():
     A = np.random.uniform(0.1, 2.0, size=N * k).astype(np.float32)
 
     # Test with different thread counts
-    labels_1 = knndbscan(N, eps, minPts, k, JA, A, threads=1)
-    labels_2 = knndbscan(N, eps, minPts, k, JA, A, threads=2)
+    labels_1 = run_knndbscan(N, eps, minPts, k, JA, A, mpi_threads=1)
+    labels_2 = run_knndbscan(N, eps, minPts, k, JA, A, mpi_threads=2)
 
     # Results should be consistent across thread counts
     assert len(labels_1) == len(labels_2) == N, "Label array length mismatch"
@@ -38,8 +38,8 @@ def test_knndbscan_threading():
     np.testing.assert_array_equal(labels_1, labels_2)
 
 
-def test_knndbscan_small_dataset():
-    """Test with a very small dataset to verify noise detection."""
+def test_run_knndbscan_small_dataset():
+    """Test core binding with a very small dataset to verify noise detection."""
     N = 4
     k = 2
     eps = 0.5  # Small epsilon to make most points noise
@@ -74,7 +74,7 @@ def test_knndbscan_small_dataset():
         dtype=np.float32,
     )
 
-    labels = knndbscan(N, eps, minPts, k, JA, A, threads=1)
+    labels = run_knndbscan(N, eps, minPts, k, JA, A, mpi_threads=1)
 
     # With large distances and small eps, most/all points should be noise (-1)
     assert len(labels) == N, f"Expected {N} labels, got {len(labels)}"
@@ -86,6 +86,52 @@ def test_knndbscan_small_dataset():
     # Check that we get some result (could be all noise with these parameters)
     unique_labels = np.unique(labels)
     assert len(unique_labels) >= 1, "Expected at least the noise label (-1) in results"
+
+
+def test_knndbscan_runner_integration():
+    """Test the high-level knndbscan runner with raw data points."""
+    # Create two clear clusters in 2D space
+    X = np.array(
+        [
+            [0, 0],
+            [0, 1],
+            [1, 0],
+            [1, 1],  # Cluster 1
+            [10, 10],
+            [10, 11],
+            [11, 10],
+            [11, 11],  # Cluster 2
+        ],
+        dtype=np.float32,
+    )
+
+    eps = 2.0
+    min_samples = 3
+
+    labels = knn_dbscan(X, eps=eps, min_samples=min_samples, n_jobs=1)
+
+    assert len(labels) == 8
+    unique_labels = np.unique(labels[labels >= 0])
+    assert len(unique_labels) == 2, "Should detect exactly 2 clusters"
+
+    # Verify cluster separation
+    # First 4 points should be in one cluster, last 4 in another
+    assert len(np.unique(labels[:4])) == 1
+    assert len(np.unique(labels[4:])) == 1
+    assert labels[0] != labels[4]
+
+
+def test_knndbscan_runner_noise():
+    """Test high-level runner handles noise correctly."""
+    # Points far apart
+    X = np.array([[0, 0], [10, 10], [20, 20]], dtype=np.float32)
+    eps = 1.0
+    min_samples = 2
+
+    labels = knn_dbscan(X, eps=eps, min_samples=min_samples)
+
+    # All should be noise (-1)
+    assert np.all(labels == -1)
 
 
 if __name__ == "__main__":

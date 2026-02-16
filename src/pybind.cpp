@@ -1,41 +1,42 @@
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
-#include <pybind11/numpy.h>
-#include <vector>
 #include <mpi.h>
 #include <omp.h>
+#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
-#include "globals.h"
+#include <vector>
+
 #include "clusters.h"
+#include "globals.h"
 
 namespace py = pybind11;
 
-py::array_t<int> knndbscan_py(int N, float eps, int minPts, int k, py::array_t<int> JA_np, py::array_t<float> A_np, int threads = 1)
-{
+py::array_t<int> knndbscan_py(int N, float eps, int minPts, int k,
+                              py::array_t<int> JA_np, py::array_t<float> A_np,
+                              int mpi_threads = 1, bool verbose = false) {
     // Initialize MPI if not already initialized
     int initialized;
     MPI_Initialized(&initialized);
 
     int provided;
-    if (!initialized)
-    {
+    if (!initialized) {
         // Request MPI_THREAD_SERIALIZED to allow multiple threads to make MPI calls
         MPI_Init_thread(NULL, NULL, MPI_THREAD_SERIALIZED, &provided);
     }
 
-    omp_set_dynamic(0);           // Disable dynamic teams
-    omp_set_num_threads(threads); // Set number of threads for OpenMP
+    omp_set_dynamic(0);                // Disable dynamic teams
+    omp_set_num_threads(mpi_threads);  // Set number of threads for OpenMP
 
     // Get buffer info from numpy arrays
     auto JA_buf = JA_np.request();
     auto A_buf = A_np.request();
 
     // Zero-copy access to the data
-    point_int *JA = static_cast<point_int *>(JA_buf.ptr);
-    float *A = static_cast<float *>(A_buf.ptr);
+    point_int* JA = static_cast<point_int*>(JA_buf.ptr);
+    float* A = static_cast<float*>(A_buf.ptr);
 
     // Call the clustering function
-    std::vector<point_int> labels = knndbscan(N, eps, minPts, k, JA, A);
+    std::vector<point_int> labels = knndbscan(N, eps, minPts, k, JA, A, verbose);
 
     // Don't finalize MPI here - let it persist for multiple calls
     // MPI will be finalized when the Python process exits
@@ -44,9 +45,8 @@ py::array_t<int> knndbscan_py(int N, float eps, int minPts, int k, py::array_t<i
     return py::array_t<int>(labels.size(), labels.data());
 }
 
-PYBIND11_MODULE(_core, m)
-{
-    m.def("knndbscan", &knndbscan_py, R"doc(
+PYBIND11_MODULE(_core, m) {
+    m.def("run_knndbscan", &knndbscan_py, R"doc(
 Perform kNN-DBSCAN clustering on a dataset using a precomputed k-nearest neighbors graph.
 
 This function implements a variant of DBSCAN that uses a k-nearest neighbors (kNN) graph
@@ -64,8 +64,10 @@ Args:
                                Shape should be (N * k,), stored in row-major order.
     A (numpy.ndarray of float): Array of distances corresponding to the neighbors in JA.
                                 Shape should be (N * k,), stored in row-major order.
-    threads (int, optional): Number of OpenMP threads to use for parallel computation.
+    mpi_threads (int, optional): Number of OpenMP threads to use for parallel computation.
                              Defaults to 1 (single-threaded).
+    verbose (bool, optional): Whether to print timing and debug information.
+                              Defaults to False.
 
 Returns:
     numpy.ndarray of int: Cluster labels for each point. Shape is (N,).
@@ -82,5 +84,6 @@ Note:
     MPI is initialized automatically if not already done, but not finalized to allow
     multiple calls within the same Python process.
 )doc",
-          py::arg("N"), py::arg("eps"), py::arg("minPts"), py::arg("k"), py::arg("JA"), py::arg("A"), py::arg("threads") = 1);
+          py::arg("N"), py::arg("eps"), py::arg("minPts"), py::arg("k"), py::arg("JA"),
+          py::arg("A"), py::arg("mpi_threads") = 1, py::arg("verbose") = false);
 }
