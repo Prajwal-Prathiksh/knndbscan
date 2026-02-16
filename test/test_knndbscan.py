@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from knndbscan import knndbscan, run_knndbscan
+from knndbscan import knn_dbscan, run_knndbscan
 
 
 def test_run_knndbscan_threading():
@@ -108,7 +108,7 @@ def test_knndbscan_runner_integration():
     eps = 2.0
     min_samples = 3
 
-    labels = knndbscan(X, eps=eps, min_samples=min_samples, n_jobs=1)
+    labels = knn_dbscan(X, eps=eps, min_samples=min_samples, n_jobs=1)
 
     assert len(labels) == 8
     unique_labels = np.unique(labels[labels >= 0])
@@ -128,7 +128,7 @@ def test_knndbscan_runner_noise():
     eps = 1.0
     min_samples = 2
 
-    labels = knndbscan(X, eps=eps, min_samples=min_samples)
+    labels = knn_dbscan(X, eps=eps, min_samples=min_samples)
 
     # All should be noise (-1)
     assert np.all(labels == -1)

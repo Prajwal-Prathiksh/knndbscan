@@ -9,7 +9,7 @@ from ._core import run_knndbscan
 logger = logging.getLogger(__name__)
 
 
-def knndbscan(
+def knn_dbscan(
     X: npt.ArrayLike,
     eps: float,
     min_samples: int,

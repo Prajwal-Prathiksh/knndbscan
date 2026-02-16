@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.cluster import DBSCAN, KMeans
 from sklearn.datasets import make_blobs, make_moons
 
-from knndbscan import knndbscan
+from knndbscan import knn_dbscan
 
 
 def run_benchmark(
@@ -67,7 +67,7 @@ def run_benchmark(
     # --- knndbscan ---
     print(f"Running knndbscan [eps={eps}, min_samples={min_samples}]...")
     start = time.perf_counter()
-    labels_knn = knndbscan(X, eps=eps, min_samples=min_samples, n_jobs=-1)
+    labels_knn = knn_dbscan(X, eps=eps, min_samples=min_samples, n_jobs=-1)
     duration_knn = time.perf_counter() - start
 
     n_clus_knn = len(set(labels_knn)) - (1 if -1 in labels_knn else 0)
