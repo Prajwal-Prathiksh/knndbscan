@@ -134,11 +134,11 @@ if __name__ == "__main__":
 
     # 1. Blobs
     print("Generating Blobs...")
-    n_blobs = 5
+    n_blobs = 50
     X_blobs, _ = make_blobs(  # type: ignore
         n_samples=n_samples,
         centers=n_blobs,
-        cluster_std=0.2,
+        cluster_std=0.1,
         random_state=seed,
     )
     run_benchmark(
@@ -158,7 +158,7 @@ if __name__ == "__main__":
         X_moons,
         dataset_name="Moons",
         n_clusters=2,
-        eps=0.2,
+        eps=0.5,
         min_samples=10,
         seed=seed,
         figs_dir=FIGS_DIR,

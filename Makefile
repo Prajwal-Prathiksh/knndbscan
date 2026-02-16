@@ -36,6 +36,10 @@ test:
 test-examples:
 	uv run python examples/test_binding.py
 	uv run python examples/benchmark_threading.py
+	uv run python examples/usage.py
+
+test-examples-gpu:
+	uv run python examples/usage_gpu.py
 
 # Run linting tools
 lint:
