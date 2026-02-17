@@ -25,11 +25,10 @@ dependencies = [
     "scikit-learn>=1.7.2",
 ]
 
-# TODO
 # [project.urls]
-# "Homepage" = "https://github.com/Prajwal-Prathiksh/knndbscan"
-# "Bug Reports" = "https://github.com/Prajwal-Prathiksh/knndbscan/issues"
-# "Source" = "https://github.com/Prajwal-Prathiksh/knndbscan"
+# "Homepage" = "TODO"
+# "Bug Reports" = "TODO"
+# "Source" = "TODO"
 
 [tool.uv]
 resolution = "lowest-direct"
