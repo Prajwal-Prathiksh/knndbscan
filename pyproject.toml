@@ -31,6 +31,9 @@ dependencies = [
 # "Bug Reports" = "https://github.com/Prajwal-Prathiksh/knndbscan/issues"
 # "Source" = "https://github.com/Prajwal-Prathiksh/knndbscan"
 
+[tool.uv]
+resolution = "lowest-direct"
+
 [project.optional-dependencies]
 gpu = [
     "cuml-cu12>=25.10.0",
@@ -40,7 +43,7 @@ gpu = [
 [[tool.uv.index]]
 name = "nvidia"
 url = "https://pypi.nvidia.com/"
-explicit = false 
+explicit = true
 
 [build-system]
 requires = ["setuptools>=61", "pybind11[global]>=2.6.0"]
