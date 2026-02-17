@@ -66,30 +66,40 @@ lint:
 	uv run --group lint mypy knndbscan/ || true
 	uv run --group lint clang-format --dry-run --Werror src/*.cpp include/*.h test/*.cpp
 
+# Load environment variables from .env file
+load-env-vars:
+	@if [ ! -f ".env" ]; then \
+		echo "WARNING: .env file not found. Make sure to set environment variables manually."; \
+	else \
+		echo "✓ .env file found"; \
+	fi
+
 # Publish to PyPI
-publish: build repair-wheels
+publish: build repair-wheels load-env-vars
 	@echo "Publishing to PyPI..."
-	@if [ ! -f "$$HOME/.pypirc" ] && [ -z "$$TWINE_PASSWORD" ]; then \
-		echo "ERROR: Authentication required. Either:"; \
-		echo "  1. Create ~/.pypirc file with your API token, OR"; \
-		echo "  2. Set environment variable: export TWINE_PASSWORD='pypi-...'"; \
+	@set -a; [ -f ".env" ] && . ./.env; \
+	if [ -z "$$UV_PUBLISH_TOKEN_PYPI" ]; then \
+		echo "ERROR: UV_PUBLISH_TOKEN_PYPI environment variable required."; \
+		echo "  1. Add to .env file: UV_PUBLISH_TOKEN_PYPI=your-production-token, OR"; \
+		echo "  2. Set environment variable: export UV_PUBLISH_TOKEN_PYPI='pypi-...'"; \
 		echo ""; \
 		echo "Get API token from: https://pypi.org/manage/account/#api-tokens"; \
 		exit 1; \
-	fi
-	uv publish
+	fi; \
+	UV_PUBLISH_TOKEN="$$UV_PUBLISH_TOKEN_PYPI" uv publish --publish-url https://upload.pypi.org/legacy/
 
 # Publish to Test PyPI
-publish-test: build repair-wheels
+publish-test: build repair-wheels load-env-vars
 	@echo "Publishing to Test PyPI..."
-	@if [ ! -f "$$HOME/.pypirc" ] && [ -z "$$TWINE_PASSWORD" ]; then \
-		echo "ERROR: Authentication required. Either:"; \
-		echo "  1. Create ~/.pypirc file with your API token, OR"; \
-		echo "  2. Set environment variable: export TWINE_PASSWORD='pypi-...'"; \
+	@set -a; [ -f ".env" ] && . ./.env; \
+	if [ -z "$$UV_PUBLISH_TOKEN" ]; then \
+		echo "ERROR: UV_PUBLISH_TOKEN environment variable required."; \
+		echo "  1. Create .env file with: UV_PUBLISH_TOKEN=your-token, OR"; \
+		echo "  2. Set environment variable: export UV_PUBLISH_TOKEN='pypi-...'"; \
 		echo ""; \
 		echo "Get API token from: https://test.pypi.org/manage/account/#api-tokens"; \
 		exit 1; \
-	fi
+	fi; \
 	uv publish --publish-url https://test.pypi.org/legacy/
 
 

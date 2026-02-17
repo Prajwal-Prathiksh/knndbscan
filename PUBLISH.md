@@ -1,30 +1,21 @@
 # Publishing to PyPI
 
-## Prerequisites
+## Setup
 
-- PyPI account: https://pypi.org/account/register/
-- Test PyPI account: https://test.pypi.org/account/register/
-- API tokens from both services
+1. Get API tokens:
+   - Test PyPI: https://test.pypi.org/manage/account/#api-tokens
+   - Production PyPI: https://pypi.org/manage/account/#api-tokens
 
-## Authentication
-
-**Option 1: ~/.pypirc file (recommended)**
-```ini
-[testpypi]
-  username = __token__
-  password = pypi-...your-test-token...
-
-[pypi]
-  username = __token__
-  password = pypi-...your-prod-token...
-```
-
-**Option 2: Environment variable**
+2. Create `.env` file:
 ```bash
-export TWINE_PASSWORD='pypi-...your-token...'
+# Test PyPI token
+UV_PUBLISH_TOKEN=pypi-...your-test-token...
+
+# Production PyPI token (add when ready for production)
+UV_PUBLISH_TOKEN_PYPI=pypi-...your-production-token...
 ```
 
-## Quick Start
+## Publishing
 
 ```bash
 # Test on Test PyPI first
@@ -32,8 +23,7 @@ make publish-test
 
 # Verify installation
 pip install --index-url https://test.pypi.org/simple/ knndbscan
-python -c "import knndbscan; print('Success!')"
 
-# Publish to production
+# Publish to production PyPI
 make publish
 ```
