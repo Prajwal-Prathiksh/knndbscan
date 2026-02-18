@@ -1,4 +1,5 @@
 import os
+import platform
 import subprocess
 
 from pybind11.setup_helpers import Pybind11Extension, build_ext
@@ -30,24 +31,45 @@ def get_mpi_flags():
         return ["-I/usr/include/mpi"], ["-lmpi"]
 
 
-def get_openmp_flag():
-    """Detect OpenMP flag based on compiler."""
+def get_openmp_flags():
+    """Detect OpenMP flags based on platform and compiler.
+
+    Returns a tuple of (compile_flags, link_flags).
+    """
+    if platform.system() == "Darwin":
+        # Apple clang does not support -fopenmp natively.
+        # Requires libomp installed via Homebrew: brew install libomp
+        try:
+            brew_prefix = subprocess.check_output(
+                ["brew", "--prefix", "libomp"], text=True
+            ).strip()
+            compile_flags = [
+                f"-I{brew_prefix}/include",
+                "-Xclang",
+                "-fopenmp",
+            ]
+            link_flags = [f"-L{brew_prefix}/lib", "-lomp"]
+            return compile_flags, link_flags
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # libomp not found via brew; fall back to best-effort flags
+            return ["-Xclang", "-fopenmp"], ["-lomp"]
+
     try:
         # Check if using IBM XL compiler
         version_output = subprocess.check_output(
             ["mpicxx", "--version"], text=True, stderr=subprocess.STDOUT
         )
         if "xl" in version_output.lower() or "ibm" in version_output.lower():
-            return ["-qopenmp"]
+            return ["-qopenmp"], ["-qopenmp"]
     except Exception:
         pass
 
     # Default to GCC/Clang flag
-    return ["-fopenmp"]
+    return ["-fopenmp"], ["-fopenmp"]
 
 
 mpi_compile_flags, mpi_link_flags = get_mpi_flags()
-openmp_flag = get_openmp_flag()
+openmp_compile_flags, openmp_link_flags = get_openmp_flags()
 
 # Build configuration based on environment variables
 extra_compile_args = [
@@ -67,8 +89,10 @@ ext_modules = [
         "knndbscan._core",
         ["src/pybind.cpp", "src/clusters.cpp"],
         include_dirs=["include"],
-        extra_link_args=openmp_flag + mpi_link_flags,
-        extra_compile_args=extra_compile_args + openmp_flag + mpi_compile_flags,
+        extra_link_args=openmp_link_flags + mpi_link_flags,
+        extra_compile_args=extra_compile_args
+        + openmp_compile_flags
+        + mpi_compile_flags,
     ),
 ]
 
