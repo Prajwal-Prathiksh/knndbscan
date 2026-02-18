@@ -6,6 +6,19 @@ import pytest
 from knndbscan import knn_dbscan, run_knndbscan
 
 
+def _gpu_available() -> bool:
+    """Return True only if cupy is installed AND a CUDA device is accessible."""
+    try:
+        import cupy as cp
+
+        return cp.is_available()
+    except Exception:
+        return False
+
+
+DEVICE = "gpu" if _gpu_available() else "cpu"
+
+
 def test_run_knndbscan_threading():
     """Test multi-threading functionality of the core C++ binding."""
     N = 100
@@ -78,9 +91,9 @@ def test_run_knndbscan_small_dataset():
 
     # With large distances and small eps, most/all points should be noise (-1)
     assert len(labels) == N, f"Expected {N} labels, got {len(labels)}"
-    assert isinstance(labels, np.ndarray), (
-        f"Expected labels to be a numpy array, got {type(labels)}"
-    )
+    assert isinstance(
+        labels, np.ndarray
+    ), f"Expected labels to be a numpy array, got {type(labels)}"
     assert labels.dtype == np.int32, "Expected labels to be int32"
 
     # Check that we get some result (could be all noise with these parameters)
@@ -108,7 +121,7 @@ def test_knndbscan_runner_integration():
     eps = 2.0
     min_samples = 3
 
-    labels = knn_dbscan(X, eps=eps, min_samples=min_samples, n_jobs=1)
+    labels = knn_dbscan(X, eps=eps, min_samples=min_samples, n_jobs=1, device=DEVICE)
 
     assert len(labels) == 8
     unique_labels = np.unique(labels[labels >= 0])
@@ -128,7 +141,7 @@ def test_knndbscan_runner_noise():
     eps = 1.0
     min_samples = 2
 
-    labels = knn_dbscan(X, eps=eps, min_samples=min_samples)
+    labels = knn_dbscan(X, eps=eps, min_samples=min_samples, device=DEVICE)
 
     # All should be noise (-1)
     assert np.all(labels == -1)
