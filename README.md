@@ -108,6 +108,10 @@ make test-wheel   # the built wheel on every supported Python
 [AGENTS.md](AGENTS.md) describes the code layout, conventions and verification steps;
 [docs/RELEASING.md](docs/RELEASING.md) the release process.
 
+## License
+
+BSD 3-Clause; see [LICENSE](LICENSE).
+
 ## Citation
 
 ```bibtex
