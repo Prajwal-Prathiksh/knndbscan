@@ -17,7 +17,9 @@
   theme-state.update(t)
   // The PDF's author metadata takes plain strings; names may be given as content.
   let plain(it) = if type(it) == str { it } else if it.has("text") { it.text } else { "" }
-  set document(title: title, author: authors.map(a => plain(a.name)))
+  // No build timestamp in the PDF, so an unchanged source compiles to identical bytes and a
+  // committed PDF changes only when its content does.
+  set document(title: title, author: authors.map(a => plain(a.name)), date: none)
   set page(
     paper: "a4",
     margin: (x: 2.4cm, top: 2.6cm, bottom: 2.4cm),

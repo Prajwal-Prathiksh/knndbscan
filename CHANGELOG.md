@@ -11,6 +11,9 @@ Each release's GitHub release notes are its section below.
 
 - Prebuilt wheels for Windows on x86_64 and ARM64, for every Python from 3.10 (from 3.11
   on ARM64, the first Python with NumPy, SciPy and scikit-learn wheels for it).
+- A technical companion to the paper, [docs/report/knndbscan.pdf](docs/report/knndbscan.pdf),
+  which explains the method, its theorems, the distributed algorithm and how the
+  implementation is verified, on one running example, without needing the paper first.
 
 ## [0.2.0] - 2026-11-13
 
