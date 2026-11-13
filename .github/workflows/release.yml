@@ -1,0 +1,73 @@
+name: GitHub release
+
+# Creates or updates the GitHub release of a tag: notes from CHANGELOG.md followed by the
+# merged pull requests (.github/scripts/release_notes.py), with the wheels and the sdist
+# attached. ci.yml calls it after each upload to an index; run it by hand (Actions >
+# GitHub release > Run workflow) to write or rewrite the release of an existing tag.
+#
+# It acts with GITHUB_TOKEN, and events caused by GITHUB_TOKEN start no workflow runs, so
+# creating or editing a release here can never start a publish.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      prerelease:
+        required: true
+        type: boolean
+      artifacts_from_this_run:
+        description: Attach the distributions built earlier in the calling run
+        type: boolean
+        default: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag, e.g. v0.2.0
+        required: true
+        type: string
+      prerelease:
+        description: Mark it as a pre-release (published to TestPyPI only)
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: GitHub release ${{ inputs.tag }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Distributions built in this run
+        if: inputs.artifacts_from_this_run
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Distributions from the tag's last successful CI run
+        if: ${{ !inputs.artifacts_from_this_run }}
+        run: |
+          run_id=$(gh run list --workflow ci.yml --branch "$TAG" --event push --status success \
+            --limit 1 --json databaseId --jq '.[0].databaseId')
+          test -n "$run_id" || { echo "::error::no successful CI run for $TAG"; exit 1; }
+          gh run download "$run_id" --dir artifacts
+          mkdir -p dist
+          find artifacts -type f \( -name '*.whl' -o -name '*.tar.gz' \) -exec mv {} dist/ \;
+      - name: Release notes
+        run: python3 .github/scripts/release_notes.py "$TAG" > notes.md
+      - name: Create or update the release
+        run: |
+          options=(--title "knndbscan ${TAG#v}" --notes-file notes.md
+                   --prerelease=${{ inputs.prerelease }})
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" "${options[@]}"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --verify-tag "${options[@]}"
+          fi
