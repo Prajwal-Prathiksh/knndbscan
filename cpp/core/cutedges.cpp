@@ -74,7 +74,7 @@ void update_cutedges(point_int n0, point_int ISTART, const vector<point_int> R,
         k += rcounts[l];
     }
     rbuf.resize(k);
-    MPI_Alltoallv(&sbuf[0], scounts, sdispls, MPI_INT, &rbuf[0], rcounts, rdispls,
+    MPI_Alltoallv(sbuf.data(), scounts, sdispls, MPI_INT, rbuf.data(), rcounts, rdispls,
                   MPI_INT, MPI_COMM_WORLD);
 
 // update and 2nd all to all to send back new pointer
@@ -83,7 +83,7 @@ void update_cutedges(point_int n0, point_int ISTART, const vector<point_int> R,
         int j = rbuf[l] - ISTART;
         rbuf[l] = (R[j] < 0) ? -1 : label.at(R[j]);
     }
-    MPI_Alltoallv(&rbuf[0], rcounts, rdispls, MPI_INT, &sbuf[0], scounts, sdispls,
+    MPI_Alltoallv(rbuf.data(), rcounts, rdispls, MPI_INT, sbuf.data(), scounts, sdispls,
                   MPI_INT, MPI_COMM_WORLD);
 #pragma omp parallel for
     for (int l = 0; l < nE; l++) {

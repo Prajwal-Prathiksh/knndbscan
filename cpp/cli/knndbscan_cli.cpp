@@ -166,7 +166,7 @@ int main(int argc, char** argv) {
     }
     vector<int> labels;
     if (rank == 0) labels.resize(N);
-    MPI_Gatherv(&R[0], n, MPI_INT, &labels[0], rcounts, rdispls, MPI_INT, 0,
+    MPI_Gatherv(R.data(), n, MPI_INT, labels.data(), rcounts, rdispls, MPI_INT, 0,
                 MPI_COMM_WORLD);
     // Only rank 0 may open the file: opening truncates it, so a rank that opened it
     // after rank 0 finished writing would leave it empty.

@@ -72,7 +72,7 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
 
     // cunt cross edges #s:
     vector<int> nEs(gsize);
-    MPI_Allgather(&nE, 1, MPI_INT, &nEs[0], 1, MPI_INT, MPI_COMM_WORLD);
+    MPI_Allgather(&nE, 1, MPI_INT, nEs.data(), 1, MPI_INT, MPI_COMM_WORLD);
     edge_int total_nE = nEs[0];
     edge_int max_nE = nEs[0];
     edge_int min_nE = nEs[0];
@@ -87,7 +87,7 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
     // III: relabel local roots: label, ilabels;
     vector<point_int> n_trees(gsize);
     map<point_int, int> label;
-    MPI_Allgather(&n_tree, 1, MPI_INT, &n_trees[0], 1, MPI_INT, MPI_COMM_WORLD);
+    MPI_Allgather(&n_tree, 1, MPI_INT, n_trees.data(), 1, MPI_INT, MPI_COMM_WORLD);
     int n_start, n_ALLtrees;
     label_subtrees(rank, n_tree, n_trees, C, n_start, n_ALLtrees, label);
     MPI_Barrier(MPI_COMM_WORLD);

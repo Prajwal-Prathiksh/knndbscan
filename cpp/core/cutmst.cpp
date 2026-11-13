@@ -90,8 +90,8 @@ void minimum_edges(MPI_Datatype Edgetype, const vector<int> C,
         s2[i] = i;
     }
 
-    MPI_Alltoallv(scounts, &n1[0], &s1[0], MPI_INT, rcounts, &n2[0], &s2[0], MPI_INT,
-                  MPI_COMM_WORLD);
+    MPI_Alltoallv(scounts, n1.data(), s1.data(), MPI_INT, rcounts, n2.data(), s2.data(),
+                  MPI_INT, MPI_COMM_WORLD);
     // MPI_Alltoall(scounts, 1, MPI_INT, rcounts, 1, MPI_INT, MPI_COMM_WORLD);
     k = 0;
     for (int l = 0; l < gsize; l++) {
@@ -99,8 +99,8 @@ void minimum_edges(MPI_Datatype Edgetype, const vector<int> C,
         k += rcounts[l];
     }
     rbuf.resize(k);
-    MPI_Alltoallv(&sbuf[0], scounts, sdispls, Edgetype, &rbuf[0], rcounts, rdispls,
-                  Edgetype, MPI_COMM_WORLD);
+    MPI_Alltoallv(sbuf.data(), scounts, sdispls, Edgetype, rbuf.data(), rcounts,
+                  rdispls, Edgetype, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
 
     // compare and sort
@@ -160,8 +160,8 @@ inline void alltoall_update(int* scounts, int* sdispls, vector<int>& sbuf,
         s2[i] = i;
     }
 
-    MPI_Alltoallv(scounts, &n1[0], &s1[0], MPI_INT, rcounts, &n2[0], &s2[0], MPI_INT,
-                  MPI_COMM_WORLD);
+    MPI_Alltoallv(scounts, n1.data(), s1.data(), MPI_INT, rcounts, n2.data(), s2.data(),
+                  MPI_INT, MPI_COMM_WORLD);
     //    MPI_Alltoall(scounts, 1, MPI_INT, rcounts, 1, MPI_INT, MPI_COMM_WORLD);
     int k = 0;
     for (int l = 0; l < gsize; l++) {
@@ -169,7 +169,7 @@ inline void alltoall_update(int* scounts, int* sdispls, vector<int>& sbuf,
         k += rcounts[l];
     }
     rbuf.resize(k);
-    MPI_Alltoallv(&sbuf[0], scounts, sdispls, MPI_INT, &rbuf[0], rcounts, rdispls,
+    MPI_Alltoallv(sbuf.data(), scounts, sdispls, MPI_INT, rbuf.data(), rcounts, rdispls,
                   MPI_INT, MPI_COMM_WORLD);
 // update and 2nd all to all to send back new pointer
 #pragma omp parallel for
@@ -178,7 +178,7 @@ inline void alltoall_update(int* scounts, int* sdispls, vector<int>& sbuf,
         rbuf[l] = best.at(j);
     }
 
-    MPI_Alltoallv(&rbuf[0], rcounts, rdispls, MPI_INT, &sbuf[0], scounts, sdispls,
+    MPI_Alltoallv(rbuf.data(), rcounts, rdispls, MPI_INT, sbuf.data(), scounts, sdispls,
                   MPI_INT, MPI_COMM_WORLD);
 }
 
@@ -229,7 +229,7 @@ void break_cycles_global(const vector<int> pre_check, vector<int>& roots) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     n_check = pre_check.size();
     vector<int> counts(gsize);
-    MPI_Allgather(&n_check, 1, MPI_INT, &counts[0], 1, MPI_INT, MPI_COMM_WORLD);
+    MPI_Allgather(&n_check, 1, MPI_INT, counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
     int n_all = 0;
     for (int i = 0; i < gsize; i++) n_all += counts[i];
     int* rcounts = new int[gsize];
@@ -241,9 +241,9 @@ void break_cycles_global(const vector<int> pre_check, vector<int>& roots) {
             rdispls[i] = (i == 0) ? 0 : rdispls[i - 1] + rcounts[i - 1];
         }
     }
-    MPI_Gatherv(&pre_check[0], n_check, MPI_INT, &I1[0], rcounts, rdispls, MPI_INT, 0,
-                MPI_COMM_WORLD);
-    MPI_Gatherv(&roots[0], n_check, MPI_INT, &J1[0], rcounts, rdispls, MPI_INT, 0,
+    MPI_Gatherv(pre_check.data(), n_check, MPI_INT, I1.data(), rcounts, rdispls,
+                MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Gatherv(roots.data(), n_check, MPI_INT, J1.data(), rcounts, rdispls, MPI_INT, 0,
                 MPI_COMM_WORLD);
 
     // break cycles
@@ -252,8 +252,8 @@ void break_cycles_global(const vector<int> pre_check, vector<int>& roots) {
     }
 
     // distribute new roots
-    MPI_Scatterv(&J1[0], rcounts, rdispls, MPI_INT, &roots[0], n_check, MPI_INT, 0,
-                 MPI_COMM_WORLD);
+    MPI_Scatterv(J1.data(), rcounts, rdispls, MPI_INT, roots.data(), n_check, MPI_INT,
+                 0, MPI_COMM_WORLD);
 }
 
 void output_best(const map<int, int> best, const string name) {
@@ -277,7 +277,7 @@ void output_best(const map<int, int> best, const string name) {
 
     vector<int> rbuf;
     if (rank == 0) rbuf.resize(n_all);
-    MPI_Gatherv(&sbuf[0], nbuf, MPI_INT, &rbuf[0], rcounts, rdispls, MPI_INT, 0,
+    MPI_Gatherv(sbuf.data(), nbuf, MPI_INT, rbuf.data(), rcounts, rdispls, MPI_INT, 0,
                 MPI_COMM_WORLD);
 
     if (rank == 0) {
@@ -436,7 +436,7 @@ int update_roots(const map<int, int> best, vector<int>& C, vector<int>& C_local,
     int* rdispls = new int[gsize];
     int n_root = roots.size();
     fill(counts.begin(), counts.end(), 0);
-    MPI_Allgather(&n_root, 1, MPI_INT, &counts[0], 1, MPI_INT, MPI_COMM_WORLD);
+    MPI_Allgather(&n_root, 1, MPI_INT, counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
     int n_allroot = 0;
     for (int l = 0; l < gsize; l++) {
         n_allroot += counts[l];
@@ -445,8 +445,8 @@ int update_roots(const map<int, int> best, vector<int>& C, vector<int>& C_local,
     }
 
     vector<int> all_roots(n_allroot);
-    MPI_Allgatherv(&roots[0], n_root, MPI_INT, &all_roots[0], rcounts, rdispls, MPI_INT,
-                   MPI_COMM_WORLD);
+    MPI_Allgatherv(roots.data(), n_root, MPI_INT, all_roots.data(), rcounts, rdispls,
+                   MPI_INT, MPI_COMM_WORLD);
     // update edges
     int nE = crossE.size();
 #pragma omp parallel for
@@ -473,7 +473,7 @@ void relabel(const vector<int> C_local, vector<int>& roots) {
     // relabel
     int n = C_local.size();
     vector<int> counts(gsize, 0);
-    MPI_Allgather(&n, 1, MPI_INT, &counts[0], 1, MPI_INT, MPI_COMM_WORLD);
+    MPI_Allgather(&n, 1, MPI_INT, counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
 
     int count = 0;
     int* rcounts = new int[gsize];
@@ -485,7 +485,7 @@ void relabel(const vector<int> C_local, vector<int>& roots) {
         if (l != 0) rdispls[l] = rdispls[l - 1] + rcounts[l - 1];
     }
     vector<int> rbuf(count);
-    MPI_Allgatherv(&C_local[0], n, MPI_INT, &rbuf[0], rcounts, rdispls, MPI_INT,
+    MPI_Allgatherv(C_local.data(), n, MPI_INT, rbuf.data(), rcounts, rdispls, MPI_INT,
                    MPI_COMM_WORLD);
     map<int, int> newlabel;
     int k = 0;
@@ -602,7 +602,7 @@ void label_borders(const point_int n0, const point_int n, const point_int ISTART
         k += rcounts[l];
     }
     rbuf.resize(k);
-    MPI_Alltoallv(&sbuf[0], scounts, sdispls, MPI_INT, &rbuf[0], rcounts, rdispls,
+    MPI_Alltoallv(sbuf.data(), scounts, sdispls, MPI_INT, rbuf.data(), rcounts, rdispls,
                   MPI_INT, MPI_COMM_WORLD);
 
     // update and 2nd all to all to send back new pointer
@@ -610,7 +610,7 @@ void label_borders(const point_int n0, const point_int n, const point_int ISTART
         j = rbuf[l] - ISTART;
         rbuf[l] = R[j];
     }
-    MPI_Alltoallv(&rbuf[0], rcounts, rdispls, MPI_INT, &sbuf[0], scounts, sdispls,
+    MPI_Alltoallv(rbuf.data(), rcounts, rdispls, MPI_INT, sbuf.data(), scounts, sdispls,
                   MPI_INT, MPI_COMM_WORLD);
 
     // check if border and change R
