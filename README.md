@@ -126,7 +126,8 @@ make              # every target, with a description
 ```
 
 [AGENTS.md](AGENTS.md) describes the code layout, conventions and verification steps;
-[docs/ALGORITHM.md](docs/ALGORITHM.md) how the code implements the paper;
+[docs/report/knndbscan.pdf](docs/report/knndbscan.pdf) explains the method, its theorems and
+the distributed algorithm; [docs/ALGORITHM.md](docs/ALGORITHM.md) how the code implements it;
 [docs/RELEASING.md](docs/RELEASING.md) the release process; [CHANGELOG.md](CHANGELOG.md) the changes in each
 version.
 

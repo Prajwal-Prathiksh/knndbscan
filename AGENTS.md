@@ -70,7 +70,7 @@ make test-dist PYTHONS=3.15 RESOLUTIONS=lowest-direct  # one cell of that matrix
 | `src/knndbscan/` | The Python package: `_native.py` (ctypes binding), `cluster.py` (public API), `neighbors.py` (kNN graphs on CPU or GPU). |
 | `tests/` | pytest suite; `reference.py` is the independent reference implementation. |
 | `examples/` | Runnable examples (`uv run python examples/<name>.py`). |
-| `docs/` | ALGORITHM.md (paper to code), RELEASING.md, the SC20 environment. |
+| `docs/` | ALGORITHM.md (paper to code), RELEASING.md, the SC20 environment; `report/` the Typst report on the method (`make report`), whose `template.typ` any report can import. |
 
 - `src/knndbscan/__init__.py` re-exports the public API; import from `knndbscan`, not from
   the module a name lives in.
@@ -138,6 +138,8 @@ shapes how it may be changed:
 - When existing code gains new behaviour, rename the function, its docstring and related
   identifiers to describe what it now does, and update every caller, test and doc.
 - Add or update tests with every behaviour change.
+- When a change alters what `docs/report/knndbscan.typ` states (an invariant, a stage, a
+  measured number), update it and rebuild the PDF with `make report` in the same change.
 - Add a line under `## [Unreleased]` in `CHANGELOG.md` for every change a user of the
   package or the CLI can notice, written for them (what changed and what to do about it),
   not as a commit message. The release notes are made from it, and a tag without a
