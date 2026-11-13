@@ -77,11 +77,12 @@ def test_cli_matches_library_on_any_rank_count(
 ) -> None:
     path, expected = graph_file
     output = tmp_path / "labels.txt"
-    subprocess.run(
+    run = subprocess.run(
         [MPIEXEC, "-n", str(n_ranks), CLI, "-n", str(len(expected)), "-e", str(EPS),
          "-m", str(MIN_SAMPLES), "-k", str(GRAPH_COLUMNS), "-t", "2",
          "-i", str(path), "-o", str(output)],
-        check=True, capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, timeout=120,
     )  # fmt: skip
+    assert run.returncode == 0, f"mpiexec failed:\n{run.stdout}\n{run.stderr}"
     labels = np.loadtxt(output, dtype=np.int64)
     np.testing.assert_array_equal(_renumber_by_first_point(labels), expected)

@@ -9,15 +9,15 @@ on:
     types: [published]
   workflow_dispatch:
 
+# Action versions: majors where the action publishes moving major tags; setup-uv
+# publishes only full-version tags, so it is pinned exactly, as is cibuildwheel (run via uvx).
 jobs:
   checks:
     name: Lint and test (editable install)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
       - run: uv sync --locked
       - run: make lint
       - run: make coverage
@@ -25,11 +25,14 @@ jobs:
   cli:
     name: MPI command-line program on 1-3 ranks
     runs-on: ubuntu-latest
+    env:
+      # Hosted runners have fewer physical cores than the test's 3 ranks, and Open MPI
+      # refuses to oversubscribe by default (OMPI_ for Open MPI 4, PRTE_ for 5).
+      OMPI_MCA_rmaps_base_oversubscribe: "1"
+      PRTE_MCA_rmaps_default_mapping_policy: ":oversubscribe"
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
       - run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev openmpi-bin
       - run: uv sync --locked
       - run: make test-cli
@@ -40,13 +43,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-14]
+        # The macOS runner version is pinned: it must match MACOSX_DEPLOYMENT_TARGET in
+        # [tool.cibuildwheel.macos], because Homebrew's libomp is built for the runner's OS.
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15]
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
       # Builds in a manylinux_2_28 container (Linux) and tests each wheel after repair.
-      - run: uvx --from "cibuildwheel>=3,<4" cibuildwheel --output-dir wheelhouse
-      - uses: actions/upload-artifact@v4
+      - run: uvx cibuildwheel==4.3.5 --output-dir wheelhouse
+      - uses: actions/upload-artifact@v7
         with:
           name: wheel-${{ matrix.os }}
           path: wheelhouse/*.whl
@@ -55,10 +60,10 @@ jobs:
     name: Source distribution
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
       - run: uv build --sdist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: dist/*.tar.gz
@@ -73,9 +78,9 @@ jobs:
         python: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15", "3.14t"]
         resolution: [highest, lowest-direct]
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: actions/download-artifact@v8
         with:
           name: wheel-ubuntu-latest
           path: dist
@@ -91,7 +96,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
