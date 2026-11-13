@@ -134,6 +134,10 @@ shapes how it may be changed:
 - When existing code gains new behaviour, rename the function, its docstring and related
   identifiers to describe what it now does, and update every caller, test and doc.
 - Add or update tests with every behaviour change.
+- Add a line under `## [Unreleased]` in `CHANGELOG.md` for every change a user of the
+  package or the CLI can notice, written for them (what changed and what to do about it),
+  not as a commit message. The release notes are made from it, and a tag without a
+  changelog section cannot be released.
 - Dependencies get lower bounds only (`numpy>=1.24`), never upper caps, and
   `requires-python` has no upper bound. Supporting a new Python version means adding it to
   the CI matrix, the `test-wheel` target and the classifiers.

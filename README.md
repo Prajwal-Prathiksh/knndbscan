@@ -127,7 +127,8 @@ make              # every target, with a description
 
 [AGENTS.md](AGENTS.md) describes the code layout, conventions and verification steps;
 [docs/ALGORITHM.md](docs/ALGORITHM.md) how the code implements the paper;
-[docs/RELEASING.md](docs/RELEASING.md) the release process.
+[docs/RELEASING.md](docs/RELEASING.md) the release process; [CHANGELOG.md](CHANGELOG.md) the changes in each
+version.
 
 ## License
 
