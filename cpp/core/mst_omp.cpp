@@ -1,3 +1,4 @@
+#include "cycles.h"
 #include "globals.h"
 using namespace std;
 
@@ -35,72 +36,16 @@ inline void pointer_jumping(const point_int i, Edge& e1, const point_int j,
     }
 }
 
+// Points every subtree left in a cycle of minimum edges (with the subtrees leading into
+// it) at the first member of its group, which becomes the group's root.
 inline void break_cycles(const vector<Cycle> cycles, vector<Edge>& minE) {
-    // using the similar way as forming the local branches
-    map<point_int, point_int> R;
-    int k = cycles.size();
-
-    point_int i, j, r, s;
-
-    for (int l = 0; l < k; l++) {
-        i = cycles[k].i;
-        R[i] = -1;
+    vector<int> from(cycles.size()), to(cycles.size());
+    for (size_t l = 0; l < cycles.size(); l++) {
+        from[l] = cycles[l].i;
+        to[l] = cycles[l].j;
     }
-
-    map<int, int> r_index;
-    int n_local = 0;
-
-    for (int l = 0; l < k; l++) {
-        i = cycles[l].i;
-        j = cycles[l].j;
-        if (R[i] < 0) {
-            if (R[j] < 0) {
-                R[i] = n_local;
-                R[j] = n_local;
-                r_index[n_local] = n_local;
-                n_local += 1;
-            } else {
-                R[i] = R[j];
-            }
-        } else {
-            if (R[j] < 0) {
-                R[j] = R[i];
-            } else {
-                r = R[i];
-                s = R[j];
-                if (r_index[r] != r_index[s]) {
-                    r_index[r] = r_index[s];
-                    R[i] = s;
-                }
-            }
-        }
-    }
-
-    int n_cycles = 0;
-    map<int, point_int> roots;
-    for (int l = 0; l < n_local; l++) {
-        if (r_index[l] == l) {
-            n_cycles += 1;
-            roots[l] = -1;
-        } else {
-            while (r_index[r_index[l]] != r_index[l]) {
-                r_index[l] = r_index[r_index[l]];
-            }
-        }
-    }
-
-    // update roots
-    int c;
-    for (int l = 0; l < k; l++) {
-        i = cycles[l].i;
-        c = r_index[R[i]];
-        if (roots[c] == -1) {
-            roots[c] = i;
-            minE[i].j = i;
-        } else {
-            minE[i].j = roots[c];
-        }
-    }
+    const vector<int> roots = first_member_of_group(from, to);
+    for (size_t l = 0; l < cycles.size(); l++) minE[from[l]].j = roots[l];
 }
 
 vector<point_int> mst_omp(const point_int N, const edge_int* IA, const point_int* JA,

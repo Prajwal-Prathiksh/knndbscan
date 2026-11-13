@@ -1,3 +1,4 @@
+#include "cycles.h"
 #include "globals.h"
 using namespace std;
 
@@ -211,39 +212,15 @@ inline int countall(const int n) {
     int n_all = 0;
     vector<int> counts(gsize);
 
-    MPI_Allgather(&n, 1, MPI_INT, &counts[0], 1, MPI_INT, MPI_COMM_WORLD);
+    MPI_Allgather(&n, 1, MPI_INT, counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
     for (int i = 0; i < gsize; i++) n_all += counts[i];
     return n_all;
 }
 
-// Groups the subtrees I[l] left without a root by pointer jumping, through their
-// pointers I[l] -> J[l] (each group holds one cycle of minimum edges and the subtrees
-// leading into it), and points every member at the group's first subtree in I, its new
-// root. A union-find is required: merging groups by overwriting one representative's
-// pointer, without first finding its root, can chain representatives into a cycle of
-// three or more that the pointer jumping below it would follow forever.
+// Points every subtree in I (left without a root by pointer jumping; J holds its
+// pointer) at the first member of its group, which becomes the group's root.
 void count_cycles(const vector<int> I, vector<int>& J) {
-    const int k = I.size();
-    map<int, int> parent;
-    for (int l = 0; l < k; l++) {
-        parent.emplace(I[l], I[l]);
-        parent.emplace(J[l], J[l]);
-    }
-    auto find = [&parent](int x) {
-        int root = x;
-        while (parent[root] != root) root = parent[root];
-        while (parent[x] != root) {
-            const int next = parent[x];
-            parent[x] = root;
-            x = next;
-        }
-        return root;
-    };
-    for (int l = 0; l < k; l++) parent[find(I[l])] = find(J[l]);
-
-    map<int, int> group_root;
-    for (int l = 0; l < k; l++) group_root.emplace(find(I[l]), I[l]);
-    for (int l = 0; l < k; l++) J[l] = group_root[find(I[l])];
+    J = first_member_of_group(I, J);
 }
 
 void break_cycles_global(const vector<int> pre_check, vector<int>& roots) {
