@@ -68,8 +68,18 @@ cli:
 	uv run cmake -S . -B $(CLI_BUILD) -G Ninja -DKNNDBSCAN_BUILD_LIBRARY=OFF -DKNNDBSCAN_BUILD_CLI=ON
 	uv run cmake --build $(CLI_BUILD)
 
+# The tests start up to 7 ranks; Open MPI refuses more ranks than physical cores unless
+# told to oversubscribe (OMPI_ for Open MPI 4, PRTE_ for 5; MPICH ignores both).
 test-cli: cli
-	KNNDBSCAN_CLI=$(CURDIR)/$(CLI_BUILD)/knndbscan uv run pytest tests/test_cli.py
+	KNNDBSCAN_CLI=$(CURDIR)/$(CLI_BUILD)/knndbscan \
+	OMPI_MCA_rmaps_base_oversubscribe=1 PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe \
+	uv run pytest tests/test_cli.py
+
+# Configures the library and the MPI CLI (both MPI and non-MPI views of cpp/core) without
+# building them, so editors resolve <omp.h>, <mpi.h> and the project headers.
+compile-commands:
+	uv run cmake -S . -B build/ide -G Ninja -DKNNDBSCAN_BUILD_CLI=ON
+	ln -sf ide/compile_commands.json build/compile_commands.json
 
 clean:
 	rm -rf build dist htmlcov .coverage .pytest_cache .mypy_cache .ruff_cache

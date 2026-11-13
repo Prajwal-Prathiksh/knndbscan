@@ -25,11 +25,6 @@ jobs:
   cli:
     name: MPI command-line program on 1-3 ranks
     runs-on: ubuntu-latest
-    env:
-      # Hosted runners have fewer physical cores than the test's 3 ranks, and Open MPI
-      # refuses to oversubscribe by default (OMPI_ for Open MPI 4, PRTE_ for 5).
-      OMPI_MCA_rmaps_base_oversubscribe: "1"
-      PRTE_MCA_rmaps_default_mapping_policy: ":oversubscribe"
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
