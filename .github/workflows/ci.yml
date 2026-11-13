@@ -3,17 +3,29 @@ name: CI
 # Releases (docs/RELEASING.md): pushing a v* tag tests it, uploads it to TestPyPI and
 # creates its GitHub pre-release; running this workflow by hand on that tag with
 # publish_to_pypi uploads it to PyPI and turns the pre-release into a release.
+#
+# Changes to docs/ and Markdown files alone start no run: nothing tested here reads them.
+# README.md is the exception, because it is the package's description on PyPI. GitHub
+# applies no path filter to tag pushes, so every release tag is still tested.
 on:
   push:
     branches: [main]
     tags: ["v*"]
+    paths: ["**", "!docs/**", "!**.md", "README.md"]
   pull_request:
+    paths: ["**", "!docs/**", "!**.md", "README.md"]
   workflow_dispatch:
     inputs:
       publish_to_pypi:
         description: On a v* tag, upload to PyPI instead of TestPyPI
         type: boolean
         default: false
+
+# A new push to a pull request cancels the run for its previous commit; runs on main and
+# on tags always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Action versions: majors where the action publishes moving major tags; setup-uv and
 # msvc-dev-cmd are pinned exactly, as is cibuildwheel (run via uvx).
