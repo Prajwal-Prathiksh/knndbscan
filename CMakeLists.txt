@@ -15,9 +15,9 @@ option(KNNDBSCAN_BUILD_CLI "Build the MPI command-line program" OFF)
 # On macOS with Apple Clang, point OpenMP_ROOT at libomp (e.g. $(brew --prefix libomp)).
 find_package(OpenMP REQUIRED COMPONENTS CXX)
 
-# clusters.cpp includes the rest of cpp/core, so the core is one translation unit. It is
+# knndbscan.cpp includes the rest of cpp/core, so the core is one translation unit. It is
 # compiled into each target separately because the library and the CLI see different MPIs.
-set(KNNDBSCAN_CORE_SOURCE ${PROJECT_SOURCE_DIR}/cpp/core/clusters.cpp)
+set(KNNDBSCAN_CORE_SOURCE ${PROJECT_SOURCE_DIR}/cpp/core/knndbscan.cpp)
 # The core is the published SC20 implementation; its known-benign warnings are silenced.
 set(KNNDBSCAN_CORE_WARNINGS
   $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wno-unused-variable -Wno-unused-value

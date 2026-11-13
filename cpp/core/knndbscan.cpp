@@ -1,7 +1,7 @@
-#include "cutedges.cpp"
-#include "cutmst.cpp"
+#include "cut_edges.cpp"
+#include "cut_mst.cpp"
 #include "globals.h"
-#include "localmst_omp.cpp"
+#include "local_mst.cpp"
 #include "log.h"
 using namespace std;
 

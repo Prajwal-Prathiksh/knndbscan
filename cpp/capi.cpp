@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-#include "clusters.h"
+#include "core.h"
 #include "knndbscan.h"
 #include "log.h"
 
