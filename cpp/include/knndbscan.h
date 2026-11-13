@@ -32,10 +32,11 @@ enum {
  * of bounds or loop forever.
  *
  * Parameters: a point is a core point when the distance to its (min_samples - 1)-th
- * neighbor is strictly less than eps; 2 <= min_samples <= n_neighbors + 1. Core points
- * are linked through their first min_samples - 1 neighbors only. n_threads >= 1 OpenMP
- * threads are used; the caller's OpenMP settings are restored on return. A nonzero
- * `verbose` prints phase timings to standard output.
+ * neighbor is at most eps; 2 <= min_samples <= n_neighbors + 1. Core points are linked
+ * through their first min_samples - 1 neighbors; later columns are not read. A border
+ * point joins the cluster of its nearest core neighbor within eps. n_threads >= 1
+ * OpenMP threads are used; the caller's OpenMP settings are restored on return. A
+ * nonzero `verbose` prints phase timings to standard output.
  *
  * Limits: n_points * n_neighbors must be below 2^31.
  *

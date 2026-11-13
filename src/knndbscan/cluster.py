@@ -43,9 +43,11 @@ def knn_dbscan_from_graph(
 
     Use this with any kNN graph, exact or approximate (for example from FAISS or
     pynndescent). A point is a core point when the distance to its
-    ``(min_samples - 1)``-th neighbor is strictly less than ``eps``. Core points are
-    linked through their first ``min_samples - 1`` neighbors; further columns only
-    serve to attach border points to clusters.
+    ``(min_samples - 1)``-th neighbor is at most ``eps``; core points are linked
+    through their first ``min_samples - 1`` neighbors, and a border point joins the
+    cluster of its nearest core neighbor within ``eps``. Columns beyond
+    ``min_samples - 1`` are not used, so one graph serves every
+    ``min_samples <= n_neighbors + 1``.
 
     Args:
         neighbors: Integer neighbor indices, shape ``(n_points, n_neighbors)``. Row ``i``
@@ -95,11 +97,11 @@ def knn_dbscan(
     """Cluster data points with kNN-DBSCAN over their exact Euclidean kNN graph.
 
     Builds the ``(min_samples - 1)``-nearest-neighbor graph of ``X`` and clusters it
-    with :func:`knn_dbscan_from_graph`. Core points are the same as scikit-learn's
-    ``DBSCAN(eps, min_samples)`` would find, except that distances equal to ``eps`` do
-    not count. Clusters can differ from DBSCAN's: two core points are linked only if one
-    is among the other's ``min_samples - 1`` nearest neighbors, so kNN-DBSCAN may split
-    a cluster that DBSCAN joins.
+    with :func:`knn_dbscan_from_graph`. Core, border and noise points are exactly those
+    of scikit-learn's ``DBSCAN(eps, min_samples)``. Clusters can differ: two core points
+    are linked only if one is among the other's ``min_samples - 1`` nearest neighbors,
+    so kNN-DBSCAN may split a cluster that DBSCAN joins, but never joins two that
+    DBSCAN separates.
 
     Args:
         X: Data of shape ``(n_samples, n_features)``: a NumPy array, anything
@@ -203,6 +205,6 @@ class KNNDBSCAN(ClusterMixin, BaseEstimator):  # type: ignore[misc]
             neighbors, distances, self.eps, self.min_samples, n_jobs, self.verbose
         )
         # The same float32 comparison as the C++ core, so the two agree at eps exactly.
-        is_core = distances[:, self.min_samples - 2] < np.float32(self.eps)
+        is_core = distances[:, self.min_samples - 2] <= np.float32(self.eps)
         self.core_sample_indices_ = np.flatnonzero(is_core)
         return self

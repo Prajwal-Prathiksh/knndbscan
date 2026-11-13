@@ -58,13 +58,15 @@ labels = knn_dbscan_from_graph(neighbors, distances, eps=0.05, min_samples=15)
 
 ## How the results relate to DBSCAN
 
-- **Core points are DBSCAN's**, except that the radius test is strict: a point is a core
-  point when its `(min_samples - 1)`-th nearest neighbor (the point itself counts towards
-  `min_samples`, as in scikit-learn) lies at a distance `< eps`.
+- **Core, border and noise points are DBSCAN's.** A point is a core point when its
+  `(min_samples - 1)`-th nearest neighbor (the point itself counts towards `min_samples`,
+  as in scikit-learn) lies at a distance `<= eps`.
 - **Clusters can differ.** Two core points are linked only through kNN edges: one must be
   among the other's `min_samples - 1` nearest neighbors. kNN-DBSCAN can therefore split a
-  cluster that DBSCAN joins through a sparse bridge. More neighbors in a precomputed graph
-  change only how border points are attached, not the clusters.
+  cluster that DBSCAN joins through a sparse bridge, but never joins clusters that DBSCAN
+  separates; with the same number of clusters, the two agree (Theorem 3.4 of the paper).
+- **A wider graph is reusable.** Columns beyond `min_samples - 1` are not used, so a graph
+  with `k` neighbors serves every `min_samples <= k + 1` without recomputing it.
 - **Labels** are `0..n_clusters-1`, numbered by each cluster's lowest-indexed point, and
   `-1` for noise. They do not depend on the number of threads.
 

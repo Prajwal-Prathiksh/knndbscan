@@ -590,9 +590,9 @@ void label_borders(const point_int n0, const point_int n, const point_int ISTART
 #pragma omp parallel for reduction(merge_Cycle : borders)
     for (point_int p = 0; p < n; p++) {
         edge_int m = p * maxk;
-        if ((R[p] == -1) and (A[m] < eps)) {  // non-core point and not obvious noise
+        if ((R[p] == -1) and (A[m] <= eps)) {  // non-core point and not obvious noise
             Cycle e = {p, -1};
-            while (A[m] < eps) {
+            while (A[m] <= eps) {
                 point_int q = JA[m] - ISTART;
                 if ((q < 0) or (q >= n)) {
                     m += 1;
@@ -616,7 +616,7 @@ void label_borders(const point_int n0, const point_int n, const point_int ISTART
         if (e.j == -1) {  // only points need to be checked
             point_int p = e.i;
             edge_int m = p * maxk;
-            while (A[m] < eps) {
+            while (A[m] <= eps) {
                 point_int q = JA[m] - ISTART;
                 if ((q < 0) or (q >= n)) crossE.push_back(m);
                 m += 1;

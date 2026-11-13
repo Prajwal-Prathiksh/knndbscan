@@ -65,11 +65,12 @@ Names (use them in code, docstrings, messages and docs):
   ascending order of distance, **excluding the point itself**, as two row-major arrays
   `neighbors` (int32) and `distances` (float32) of shape `(n_points, n_neighbors)`.
 - **min_samples** counts the point itself, as in scikit-learn. A point is a **core point**
-  when the distance to its `(min_samples - 1)`-th neighbor is strictly less than `eps`.
+  when the distance to its `(min_samples - 1)`-th neighbor is at most `eps` (`<=`, as in
+  the paper and scikit-learn). Core, border and noise points are exactly DBSCAN's.
 - Two core points are in the same cluster when they are connected through kNN-graph edges
   between core points among each one's first `min_samples - 1` neighbors. This is
-  kNN-DBSCAN, not DBSCAN: it can split a cluster that DBSCAN would join, and extra
-  neighbors beyond `min_samples - 1` only change how border points are assigned.
+  kNN-DBSCAN, not DBSCAN: it can split a cluster that DBSCAN would join. Columns beyond
+  `min_samples - 1` are never read.
 - **Labels**: `0..n_clusters-1` for clusters, numbered in order of each cluster's
   lowest-indexed point (`cpp/capi.cpp` renumbers the core's output), and `-1` for noise.
 
@@ -130,7 +131,7 @@ Every name exported from `knndbscan/__init__.py` (functions, classes and their p
 methods) gets a Google-style docstring: a one-line summary, then `Args:`, `Returns:`,
 `Raises:` and, where useful, `Example:`. These docstrings are the user documentation, so
 they state units, shapes, defaults and conventions (self-exclusion, `min_samples`
-counting the point itself, strict `< eps`) even when the type hints imply them.
+counting the point itself, `<= eps`) even when the type hints imply them.
 
 ```python
 def knn_dbscan_from_graph(neighbors, distances, eps, min_samples, *, n_jobs=None):

@@ -44,7 +44,7 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
 #pragma omp parallel for reduction(merge_pointint : core)
     for (point_int p = 0; p < n; p++) {
         float radius = A[p * maxk + minPts - 2];
-        if (radius < eps) {
+        if (radius <= eps) {
             R[p] = p;  // mark as core
             core.push_back(p);
         } else {
