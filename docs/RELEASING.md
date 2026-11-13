@@ -10,7 +10,7 @@ anywhere. A release goes to TestPyPI first and is promoted to PyPI by hand.
 | 2 | Actions > CI > Run workflow on the tag, with *publish_to_pypi* | full CI; upload to PyPI; the pre-release becomes the latest **release** |
 
 Each upload waits for every other job: lint, the tests, the MPI and sanitizer suites,
-wheels for Linux x86_64 / aarch64 and macOS 26 arm64 / x86_64, and every wheel on the
+wheels for Linux x86_64 / aarch64, macOS 26 arm64 / x86_64 and Windows x86_64, and every wheel on the
 oldest and newest supported Pythons with the oldest and newest allowed dependencies.
 
 The GitHub release (`.github/workflows/release.yml`) has the version's section of

@@ -28,6 +28,7 @@ classifiers = [
     "Programming Language :: Python :: Free Threading :: 3 - Stable",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Typing :: Typed",
 ]
 dependencies = [
@@ -91,6 +92,16 @@ test-command = "pytest {project}/tests"
 # macOS version of the CI runners (macos-26 and macos-26-intel in .github/workflows/ci.yml).
 before-all = "brew install libomp"
 environment = { MACOSX_DEPLOYMENT_TARGET = "26.0", OpenMP_ROOT = "$(brew --prefix libomp)" }
+
+[tool.cibuildwheel.windows]
+# MSVC's compiler implements OpenMP 2.0 only (see CMakeLists.txt), so the wheel is built
+# with clang-cl and the OpenMP runtime of the LLVM installed on GitHub's Windows runners,
+# inside the Visual Studio developer shell CI sets up. delvewheel bundles libomp.dll;
+# --analyze-existing makes it inspect knndbscan.dll, a plain DLL rather than an extension.
+archs = ["AMD64"]
+environment = { CC = "clang-cl", CXX = "clang-cl", CMAKE_GENERATOR = "Ninja", OpenMP_ROOT = "C:/Program Files/LLVM" }
+before-build = "pip install delvewheel"
+repair-wheel-command = 'delvewheel repair --analyze-existing --add-path "C:/Program Files/LLVM/bin" -w {dest_dir} {wheel}'
 
 [tool.uv]
 # Rebuild the C library on `uv sync` / `uv run` when its sources change.

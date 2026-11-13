@@ -107,22 +107,12 @@ build: ## Wheel and sdist into dist/
 test-wheel: build ## Build, then test-dist
 	@$(MAKE) --no-print-directory test-dist
 
-# The wheel is py3-none-<platform>; this proves it on each interpreter, with the newest and
-# the oldest dependency versions the metadata allows. The dependencies are installed from
-# pyproject.toml as direct requirements, because lowest-direct lowers only those.
 .PHONY: test-dist
 test-dist: ## Test dist/*.whl on each of PYTHONS x RESOLUTIONS, in fresh environments
 	@set -e; for python in $(PYTHONS); do \
 	  for resolution in $(RESOLUTIONS); do \
 	    echo "=== Python $$python, $$resolution dependencies"; \
-	    env=$(BUILD)/test-wheel/$$python-$$resolution; rm -rf $$env; \
-	    uv venv -q --python $$python $$env; \
-	    uv pip install -q --python $$env pytest; \
-	    uv pip install -q --python $$env --only-binary :all: --resolution $$resolution \
-	      -r pyproject.toml; \
-	    uv pip install -q --python $$env --no-deps dist/*.whl; \
-	    uv pip list -q --python $$env 2>/dev/null | grep -E '^(numpy|scikit-learn) '; \
-	    $$env/bin/python -m pytest -q -p no:cacheprovider tests; \
+	    .github/scripts/test_wheel.sh $$python $$resolution; \
 	  done; \
 	done
 

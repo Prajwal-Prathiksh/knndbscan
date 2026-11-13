@@ -7,6 +7,10 @@ Each release's GitHub release notes are its section below.
 
 ## [Unreleased]
 
+### Added
+
+- Prebuilt wheels for Windows (x86_64), for every Python from 3.10.
+
 ## [0.2.0] - 2026-11-13
 
 A rebuild of the package around the original SC20 implementation, with fixes to its
