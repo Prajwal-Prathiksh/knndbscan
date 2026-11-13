@@ -5,7 +5,15 @@
 
 #include <stdint.h>
 
-#if defined(__GNUC__) || defined(__clang__)
+/* A Windows DLL exports only what is marked dllexport; the library's build defines
+ * KNNDBSCAN_BUILDING, and C programs linking against the DLL see dllimport. */
+#if defined(_WIN32)
+#ifdef KNNDBSCAN_BUILDING
+#define KNNDBSCAN_API __declspec(dllexport)
+#else
+#define KNNDBSCAN_API __declspec(dllimport)
+#endif
+#elif defined(__GNUC__) || defined(__clang__)
 #define KNNDBSCAN_API __attribute__((visibility("default")))
 #else
 #define KNNDBSCAN_API

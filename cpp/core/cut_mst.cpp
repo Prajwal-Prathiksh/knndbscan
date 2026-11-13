@@ -34,7 +34,7 @@ void minimum_edges(MPI_Datatype Edgetype, const vector<int> C,
         c = C[i];
         edge = minE[c];
         if (edge.j >= 0) {
-            if ((n_start <= c) and (c < n_end)) {  // local
+            if ((n_start <= c) && (c < n_end)) {  // local
                 redges.push_back({c, edge.j, edge.w});
             } else {
                 k = jlabels[c];
@@ -177,7 +177,7 @@ inline void post_recv(const int n_check, int* scounts, const vector<int> sbuf,
         const bool closed_cycle = (j == i);
         if (closed_cycle) j = to_compare[l];
         best[i] = j;  // update
-        if (closed_cycle or
+        if (closed_cycle ||
             to_compare[l] != j) {  // root not found, need the next iteration
             k = jlabels[j];
             scounts[k] += 1;
@@ -292,7 +292,7 @@ void find_roots(const vector<int> C_local, map<int, int>& best) {
         post_recv(n_check, scounts, sbuf, to_check, to_compare, pre_check, best);
         n_check = pre_check.size();
         check_flag = countall(n_check);
-        if ((check_flag != 0) and (check_flag == check_flag_old)) {
+        if ((check_flag != 0) && (check_flag == check_flag_old)) {
             vector<int> roots(n_check);
             for (int l = 0; l < n_check; l++) {
                 int c = pre_check[l];
@@ -359,7 +359,7 @@ int update_roots(const map<int, int> best, vector<int>& C, vector<int>& C_local,
     for (itr = new_C.begin(); itr != new_C.end(); ++itr) {
         i = itr->first;
         C.push_back(i);
-        if ((n_start <= i) and (i < n_end)) C_local.push_back(i);
+        if ((n_start <= i) && (i < n_end)) C_local.push_back(i);
     }
 
     // update roots

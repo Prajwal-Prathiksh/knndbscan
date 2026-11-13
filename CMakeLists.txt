@@ -12,6 +12,12 @@ endif()
 option(KNNDBSCAN_BUILD_LIBRARY "Build the shared library the Python package loads" ON)
 option(KNNDBSCAN_BUILD_CLI "Build the MPI command-line program" OFF)
 
+# The core needs OpenMP 4 (user-defined reductions); MSVC's compiler implements 2.0. On
+# Windows, build with clang-cl and LLVM's OpenMP runtime instead (CC=clang-cl CXX=clang-cl,
+# CMAKE_GENERATOR=Ninja, OpenMP_ROOT=<LLVM install>), from a Visual Studio developer shell.
+if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  message(FATAL_ERROR "MSVC's OpenMP 2.0 cannot build knndbscan; use clang-cl (see CMakeLists.txt)")
+endif()
 # On macOS with Apple Clang, point OpenMP_ROOT at libomp (e.g. $(brew --prefix libomp)).
 find_package(OpenMP REQUIRED COMPONENTS CXX)
 
@@ -28,7 +34,8 @@ if(KNNDBSCAN_BUILD_LIBRARY)
   target_include_directories(knndbscan PRIVATE cpp/include cpp cpp/core)
   target_link_libraries(knndbscan PRIVATE OpenMP::OpenMP_CXX)
   target_compile_options(knndbscan PRIVATE ${KNNDBSCAN_CORE_WARNINGS})
-  # Only the knndbscan_* functions of knndbscan.h are exported.
+  # Only the knndbscan_* functions of knndbscan.h are exported (dllexport on Windows).
+  target_compile_definitions(knndbscan PRIVATE KNNDBSCAN_BUILDING)
   set_target_properties(knndbscan PROPERTIES
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN ON)

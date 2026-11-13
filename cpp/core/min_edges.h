@@ -26,7 +26,7 @@ inline void pwrite(Edge& e_old, const point_int j_new, const float w_new) {
     float w_old;
     do {
         w_old = e_old.w;
-    } while ((w_new < w_old) and (cas(e_old, w_old, j_new, w_new)));
+    } while ((w_new < w_old) && (cas(e_old, w_old, j_new, w_new)));
     // the first condition determines if it is necessary to swap
     // the second condition determines if the swap is successed.
 }
