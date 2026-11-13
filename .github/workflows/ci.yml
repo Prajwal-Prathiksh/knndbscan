@@ -21,9 +21,10 @@ jobs:
       - run: uv sync --locked
       - run: make lint
       - run: make coverage
+      - run: make test-cpp
 
   cli:
-    name: MPI command-line program on 1-3 ranks
+    name: MPI command-line program on 1-7 ranks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -31,6 +32,16 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev openmpi-bin
       - run: uv sync --locked
       - run: make test-cli
+
+  sanitizers:
+    name: AddressSanitizer and UBSan (C tests, library, MPI program)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev openmpi-bin
+      - run: uv sync --locked
+      - run: make test-sanitize
 
   wheels:
     name: Wheel (${{ matrix.os }})
@@ -106,7 +117,7 @@ jobs:
 
   publish:
     name: Publish to ${{ github.event_name == 'release' && 'PyPI' || 'TestPyPI' }}
-    needs: [checks, cli, wheels, macos-latest-os, sdist, python-versions]
+    needs: [checks, cli, sanitizers, wheels, macos-latest-os, sdist, python-versions]
     if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     # Trusted publishing: the index must list this repository, workflow and environment.

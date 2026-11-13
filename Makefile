@@ -1,10 +1,20 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help install test coverage lint format build test-wheel test-dist cli test-cli compile-commands clean
+.PHONY: help install test coverage lint format build test-wheel test-dist cli test-cli test-cpp test-sanitize compile-commands clean
 
 PYTHONS ?= 3.10 3.11 3.12 3.13 3.14 3.15 3.14t
 RESOLUTIONS ?= highest lowest-direct
 CLI_BUILD := build/cli
+CPP_TEST_BUILD := build/cpp-tests
+SANITIZE_BUILD := build/sanitize
+SANITIZE_FLAGS := -fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer
+# The tests start up to 7 ranks; Open MPI refuses more ranks than physical cores unless
+# told to oversubscribe (OMPI_ for Open MPI 4, PRTE_ for 5; MPICH ignores both).
+OVERSUBSCRIBE := OMPI_MCA_rmaps_base_oversubscribe=1 PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe
+# Open MPI's UCX and libfabric components crash under AddressSanitizer; the ob1 messaging
+# layer over its own shared-memory transport does not. Exclusions keep this valid for both
+# Open MPI 4 (transport "vader") and 5 ("sm").
+MPI_WITHOUT_UCX := OMPI_MCA_pml=ob1 OMPI_MCA_btl=^uct,ofi,smcuda OMPI_MCA_osc=^ucx OMPI_MCA_mtl=^ofi
 
 help:
 	@echo "install     uv sync: editable install plus the dev group"
@@ -16,7 +26,9 @@ help:
 	@echo "test-wheel  build, then test-dist"
 	@echo "test-dist   install dist/*.whl for each of PYTHONS x RESOLUTIONS and run the tests"
 	@echo "cli         build the MPI command-line program into $(CLI_BUILD)/"
-	@echo "test-cli    build the CLI and compare it with the library on 1-3 MPI ranks"
+	@echo "test-cli    build the MPI CLI and check it against the definitions on 1-7 ranks"
+	@echo "test-cpp    build and run the C/C++ tests in cpp/tests (ctest)"
+	@echo "test-sanitize  test-cpp, test and test-cli against AddressSanitizer+UBSan builds"
 	@echo "compile-commands  build/compile_commands.json for editors (C/C++ extension, clangd)"
 	@echo "clean       remove build artifacts"
 
@@ -69,12 +81,30 @@ cli:
 	uv run cmake -S . -B $(CLI_BUILD) -G Ninja -DKNNDBSCAN_BUILD_LIBRARY=OFF -DKNNDBSCAN_BUILD_CLI=ON
 	uv run cmake --build $(CLI_BUILD)
 
-# The tests start up to 7 ranks; Open MPI refuses more ranks than physical cores unless
-# told to oversubscribe (OMPI_ for Open MPI 4, PRTE_ for 5; MPICH ignores both).
 test-cli: cli
-	KNNDBSCAN_CLI=$(CURDIR)/$(CLI_BUILD)/knndbscan \
-	OMPI_MCA_rmaps_base_oversubscribe=1 PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe \
-	uv run pytest tests/test_cli.py
+	KNNDBSCAN_CLI=$(CURDIR)/$(CLI_BUILD)/knndbscan $(OVERSUBSCRIBE) uv run pytest tests/test_cli.py
+
+test-cpp:
+	uv run cmake -S . -B $(CPP_TEST_BUILD) -G Ninja -DKNNDBSCAN_BUILD_TESTS=ON
+	uv run cmake --build $(CPP_TEST_BUILD)
+	uv run ctest --test-dir $(CPP_TEST_BUILD) --output-on-failure
+
+# One build of the library, the CLI and the C tests with AddressSanitizer and UBSan (any
+# undefined behaviour aborts). Python loads the sanitized library through
+# KNNDBSCAN_LIBRARY, with the ASan runtime preloaded because python itself is not
+# instrumented. Leak checks are off: the core never frees its per-call scratch arrays.
+test-sanitize:
+	uv run cmake -S . -B $(SANITIZE_BUILD) -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+	  -DKNNDBSCAN_BUILD_CLI=ON -DKNNDBSCAN_BUILD_TESTS=ON \
+	  "-DCMAKE_C_FLAGS=$(SANITIZE_FLAGS)" "-DCMAKE_CXX_FLAGS=$(SANITIZE_FLAGS)" \
+	  "-DCMAKE_EXE_LINKER_FLAGS=$(SANITIZE_FLAGS)" "-DCMAKE_SHARED_LINKER_FLAGS=$(SANITIZE_FLAGS)"
+	uv run cmake --build $(SANITIZE_BUILD)
+	ASAN_OPTIONS=detect_leaks=0 uv run ctest --test-dir $(SANITIZE_BUILD) --output-on-failure
+	KNNDBSCAN_LIBRARY=$(CURDIR)/$(SANITIZE_BUILD)/libknndbscan.so ASAN_OPTIONS=detect_leaks=0 \
+	  LD_PRELOAD="$$(gcc -print-file-name=libasan.so)" \
+	  .venv/bin/python -m pytest -q -p no:cacheprovider tests --ignore=tests/test_cli.py
+	KNNDBSCAN_CLI=$(CURDIR)/$(SANITIZE_BUILD)/knndbscan ASAN_OPTIONS=detect_leaks=0 \
+	  $(MPI_WITHOUT_UCX) $(OVERSUBSCRIBE) uv run pytest -q -p no:cacheprovider tests/test_cli.py
 
 # Configures the library and the MPI CLI (both MPI and non-MPI views of cpp/core) without
 # building them, so editors resolve <omp.h>, <mpi.h> and the project headers.

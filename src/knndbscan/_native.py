@@ -5,6 +5,7 @@ serve every Python 3 version. ctypes releases the GIL for the duration of each c
 """
 
 import ctypes
+import os
 import sys
 from pathlib import Path
 
@@ -17,16 +18,25 @@ _INT32 = np.iinfo(np.int32)
 
 
 def _load_library() -> ctypes.CDLL:
-    """Find the library on the package's __path__.
+    """Load $KNNDBSCAN_LIBRARY if set (e.g. a sanitizer build), else the library on __path__.
 
-    A wheel installs it next to this file; an editable install keeps the Python sources
-    in src/ and the built library in site-packages, and lists both on __path__.
+    A wheel installs the library next to this file; an editable install keeps the Python
+    sources in src/ and the built library in site-packages, and lists both on __path__.
     """
-    name = _LIBRARY_FILES.get(sys.platform, "libknndbscan.so")
-    candidates = [Path(entry) / name for entry in sys.modules[__package__].__path__]
-    path = next((candidate for candidate in candidates if candidate.exists()), None)
-    if path is None:
-        raise ImportError(f"{name} not found in {[str(c.parent) for c in candidates]}")
+    override = os.environ.get("KNNDBSCAN_LIBRARY")
+    if override:
+        path = Path(override)
+    else:
+        name = _LIBRARY_FILES.get(sys.platform, "libknndbscan.so")
+        candidates = [Path(entry) / name for entry in sys.modules[__package__].__path__]
+        found = next(
+            (candidate for candidate in candidates if candidate.exists()), None
+        )
+        if found is None:
+            raise ImportError(
+                f"{name} not found in {[str(c.parent) for c in candidates]}"
+            )
+        path = found
     library = ctypes.CDLL(str(path))
     library.knndbscan_cluster.argtypes = [
         np.ctypeslib.ndpointer(np.int32, ndim=2, flags="C_CONTIGUOUS"),

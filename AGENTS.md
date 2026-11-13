@@ -16,18 +16,35 @@ command-line program).
   (`make cli`), which finds `mpicxx` through CMake's `FindMPI`.
 - Tests and benchmarks pass `device="cpu"` or `device="gpu"` explicitly, so a missing GPU
   cannot turn a GPU test into a CPU one.
+- `KNNDBSCAN_LIBRARY=/path/libknndbscan.so` makes the Python package load that library
+  instead of its own, e.g. a sanitizer or debug build (`make test-sanitize` uses it).
+- Debugging tools: gdb, Valgrind (with `--suppressions=/usr/share/openmpi/openmpi-valgrind.supp`
+  for MPI runs), and GCC's ASan/UBSan/TSan runtimes. `make compile-commands` gives editors
+  the exact flags (VS Code: `C_Cpp.default.compileCommands` = `build/compile_commands.json`).
 
 ## Verification
 
 Run from the repository root:
 
 ```bash
-make test        # pytest on the editable install
-make lint        # ruff, mypy, clang-format --dry-run
-make test-cli    # builds the CLI against MPI; compares 1-3 ranks with the Python result
-make test-wheel  # builds the wheel and runs the tests from it on every supported Python
+make test           # pytest on the editable install
+make lint           # ruff, mypy, clang-format --dry-run
+make test-cpp       # C/C++ tests in cpp/tests (C API contract, MPI stand-in, cycle grouping)
+make test-cli       # builds the CLI against MPI; checks it on 1-7 ranks
+make test-sanitize  # all of the above against AddressSanitizer + UBSan builds
+make test-wheel     # builds the wheel and runs the tests from it on every supported Python
 make test-dist PYTHONS=3.15 RESOLUTIONS=lowest-direct  # one cell of that matrix
 ```
+
+- The expected results come from `tests/reference.py`, which computes kNN-DBSCAN from the
+  paper's definitions with SciPy. Keep it an independent statement of the paper: never
+  derive it from, or change it to match, `cpp/core/`. When the library and the reference
+  disagree, the library is wrong until shown otherwise.
+- Random directed graphs (`reference.random_graph`) are the strongest tests: they make
+  Boruvka meet cycles, and they found every core bug fixed so far. When touching the MST
+  code, widen their sweeps (seeds, thread counts, rank counts) before trusting a change.
+- Run `make test-sanitize` after any change to `cpp/`. Optimized builds can hide data races
+  and out-of-bounds reads that the sanitized build exposes as wrong results or reports.
 
 - `make test-wheel` is the check that matters for packaging: it installs the built wheel
   (not the source tree) into a fresh environment per Python version, with both the newest
@@ -47,10 +64,12 @@ make test-dist PYTHONS=3.15 RESOLUTIONS=lowest-direct  # one cell of that matrix
 | `cpp/include/knndbscan.h` | The public C API: the only symbols the shared library exports. |
 | `cpp/capi.cpp` | The C API implementation: input validation, the call lock, error messages. |
 | `cpp/mpi_serial.h` | A single-process implementation of the MPI calls the core makes. |
-| `cpp/core/` | The kNN-DBSCAN algorithm (Borůvka MST over the kNN graph, distributed with MPI, threaded with OpenMP). |
+| `cpp/core/` | The kNN-DBSCAN algorithm (Borůvka MST over the kNN graph, distributed with MPI, threaded with OpenMP); `cycles.h` groups the subtrees caught in cycles of minimum edges, for both the local and the distributed MST. |
+| `cpp/tests/` | C and C++ tests run by CTest (`make test-cpp`). |
 | `cpp/cli/knndbscan_cli.cpp` | Command-line program: reads a kNN-graph text file and runs on any number of MPI ranks. |
 | `src/knndbscan/` | The Python package: `_native.py` (ctypes binding), `cluster.py` (public API), `neighbors.py` (kNN graphs on CPU or GPU). |
-| `tests/`, `examples/` | pytest suite; runnable examples (`uv run python examples/<name>.py`). |
+| `tests/` | pytest suite; `reference.py` is the independent reference implementation. |
+| `examples/` | Runnable examples (`uv run python examples/<name>.py`). |
 | `docs/` | Documentation other than README.md and AGENTS.md (releasing, SC20 environment). |
 
 - `src/knndbscan/__init__.py` re-exports the public API; import from `knndbscan`, not from
@@ -89,6 +108,10 @@ Names (use them in code, docstrings, messages and docs):
   `n_points * n_neighbors` must stay below 2^31; `cpp/capi.cpp` rejects larger inputs.
 - A new MPI call in the core must also be implemented in `cpp/mpi_serial.h`, with the
   semantics of a one-rank communicator, or the Python library stops building.
+- Variables written inside an `omp parallel for` must be declared inside the loop. A shared
+  scratch variable is a data race that optimized builds often hide in a register.
+- Pointer jumping over minimum edges must handle cycles of any length, including powers of
+  two, where every member reaches itself at once and would look like a root.
 
 ## Code changes
 
