@@ -168,10 +168,10 @@ int main(int argc, char** argv) {
     if (rank == 0) labels.resize(N);
     MPI_Gatherv(&R[0], n, MPI_INT, &labels[0], rcounts, rdispls, MPI_INT, 0,
                 MPI_COMM_WORLD);
-    ofstream fout;
-    fout.open(label_file);
-
+    // Only rank 0 may open the file: opening truncates it, so a rank that opened it
+    // after rank 0 finished writing would leave it empty.
     if (rank == 0) {
+        ofstream fout(label_file);
         for (int i = 0; i < N; i++) {
             fout << labels[i] << "\n";
         }
