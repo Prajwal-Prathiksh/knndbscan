@@ -2,47 +2,131 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main]
+    tags: ["v*"]
   pull_request:
-    branches: [ main, master ]
+  release:
+    types: [published]
+  workflow_dispatch:
 
+# Action versions: majors where the action publishes moving major tags; setup-uv
+# publishes only full-version tags, so it is pinned exactly, as is cibuildwheel (run via uvx).
 jobs:
-  test:
+  checks:
+    name: Lint and test (editable install)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: uv sync --locked
+      - run: make lint
+      - run: make coverage
+      - run: make test-cpp
+
+  cli:
+    name: MPI command-line program on 1-7 ranks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev openmpi-bin
+      - run: uv sync --locked
+      - run: make test-cli
+
+  sanitizers:
+    name: AddressSanitizer and UBSan (C tests, library, MPI program)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev openmpi-bin
+      - run: uv sync --locked
+      - run: make test-sanitize
+
+  wheels:
+    name: Wheel (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS wheels are built natively per architecture (Homebrew's libomp is
+        # single-architecture). The runners' macOS version must match
+        # MACOSX_DEPLOYMENT_TARGET in [tool.cibuildwheel.macos], the oldest macOS the
+        # wheels support.
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-26, macos-26-intel]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      # Builds in a manylinux_2_28 container (Linux) and tests each wheel after repair.
+      - run: uvx cibuildwheel==4.3.5 --output-dir wheelhouse
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheel-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  sdist:
+    name: Source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: uv build --sdist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  # cibuildwheel tests each wheel on the Python it builds with; these test the macOS
+  # wheels on the oldest and newest supported Pythons, with both dependency extremes.
+  macos-python-versions:
+    name: macOS wheel on ${{ matrix.runner }}, Python 3.10 and 3.15
+    needs: wheels
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, macos-26-intel]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: actions/download-artifact@v8
+        with:
+          name: wheel-${{ matrix.runner }}
+          path: dist
+      - run: make test-dist PYTHONS="3.10 3.15"
+
+  python-versions:
+    name: Wheel on Python ${{ matrix.python }} (${{ matrix.resolution }})
+    needs: wheels
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.13"]
-
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15", "3.14t"]
+        resolution: [highest, lowest-direct]
     steps:
-    - uses: actions/checkout@v5
-    
-    - name: Install uv
-      uses: astral-sh/setup-uv@v6
-      with:
-        enable-cache: true
-        python-version: ${{ matrix.python-version }}
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libopenmpi-dev openmpi-bin
-    
-    - name: Set MPI environment variables
-      run: |
-        echo "CC=mpicc" >> $GITHUB_ENV
-        echo "CXX=mpicxx" >> $GITHUB_ENV
-        echo "MPICC=mpicc" >> $GITHUB_ENV
-        echo "MPICXX=mpicxx" >> $GITHUB_ENV
-    
-    - name: Install dependencies and package
-      run: |
-        uv sync --locked --all-groups
-    
-    - name: Run linting
-      run: make lint
-    
-    - name: Run tests
-      run: make test
-    
-    - name: Build package
-      run: make build
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: actions/download-artifact@v8
+        with:
+          name: wheel-ubuntu-latest
+          path: dist
+      - run: make test-dist PYTHONS=${{ matrix.python }} RESOLUTIONS=${{ matrix.resolution }}
+
+  publish:
+    name: Publish to ${{ github.event_name == 'release' && 'PyPI' || 'TestPyPI' }}
+    needs: [checks, cli, sanitizers, wheels, macos-python-versions, sdist, python-versions]
+    if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    # Trusted publishing: the index must list this repository, workflow and environment.
+    environment: ${{ github.event_name == 'release' && 'pypi' || 'testpypi' }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: ${{ github.event_name == 'release' && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}

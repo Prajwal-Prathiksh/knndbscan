@@ -1,0 +1,534 @@
+// Stage V of knndbscan() (Algorithm 4): Boruvka over the subtrees left by the local
+// MST, joined through cut edges between ranks. Each subtree is owned by one rank, which
+// combines the candidate minimum edges other ranks send it; roots are found by
+// distributed pointer jumping, and cycles of minimum edges are joined on rank 0.
+// Part of the unity build of knndbscan.cpp.
+#include "cycles.h"
+#include "globals.h"
+#include "log.h"
+#include "min_edges.h"
+#include "partition.h"
+using namespace std;
+
+void minimum_edges(MPI_Datatype Edgetype, const vector<int> C,
+                   const vector<int> C_local, const vector<Edge> minE,
+                   map<int, int>& best) {
+    int rank, n_start, n_end;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    n_start = ilabels[rank];
+    n_end = ilabels[rank + 1];
+
+    // output: best
+    int* scounts = new int[gsize];
+    int* rcounts = new int[gsize];
+    int* sdispls = new int[gsize];
+    int* rdispls = new int[gsize];
+    for (int l = 0; l < gsize; l++) scounts[l] = 0;
+
+    vector<fullEdge> pre_sbuf, sbuf, redges, rbuf;
+
+    // assgin sbuf
+    int c, k;
+    Edge edge;
+    for (int i = 0; i < C.size(); i++) {
+        c = C[i];
+        edge = minE[c];
+        if (edge.j >= 0) {
+            if ((n_start <= c) and (c < n_end)) {  // local
+                redges.push_back({c, edge.j, edge.w});
+            } else {
+                k = jlabels[c];
+                scounts[k] += 1;
+                pre_sbuf.push_back({c, edge.j, edge.w});
+            }
+        }
+    }
+    for (int l = 0; l < gsize; l++)
+        sdispls[l] = (l == 0) ? 0 : sdispls[l - 1] + scounts[l - 1];
+    int pointer, nout;
+    nout = pre_sbuf.size();
+    sbuf.resize(nout);
+    fullEdge e;
+    vector<int> counts(gsize);
+    for (int l = 0; l < nout; l++) {
+        e = pre_sbuf[l];
+        c = e.i;
+        k = jlabels[c];
+        pointer = counts[k] + sdispls[k];
+        sbuf[pointer] = e;
+        counts[k] += 1;
+    }
+    // ALL to all transpose edges
+    vector<int> n1(gsize), n2(gsize), s1(gsize), s2(gsize);
+#pragma omp parallel for
+    for (int i = 0; i < gsize; i++) {
+        n1[i] = 1;
+        n2[i] = 1;
+        s1[i] = i;
+        s2[i] = i;
+    }
+
+    MPI_Alltoallv(scounts, n1.data(), s1.data(), MPI_INT, rcounts, n2.data(), s2.data(),
+                  MPI_INT, MPI_COMM_WORLD);
+    // MPI_Alltoall(scounts, 1, MPI_INT, rcounts, 1, MPI_INT, MPI_COMM_WORLD);
+    k = 0;
+    for (int l = 0; l < gsize; l++) {
+        rdispls[l] = (l == 0) ? 0 : rdispls[l - 1] + rcounts[l - 1];
+        k += rcounts[l];
+    }
+    rbuf.resize(k);
+    MPI_Alltoallv(sbuf.data(), scounts, sdispls, Edgetype, rbuf.data(), rcounts,
+                  rdispls, Edgetype, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // compare and sort
+    int n_local = C_local.size();
+    for (int i = 0; i < n_local; i++) {
+        c = C_local[i];
+        best[c] = -1;
+    }
+
+    redges.insert(redges.end(), rbuf.begin(), rbuf.end());
+    fullEdge redge;
+    map<int, float> minW;
+    for (int i = 0; i < redges.size(); i++) {
+        redge = redges[i];
+        c = redge.i;
+        if (best[c] == -1) {
+            best[c] = redge.j;
+            minW[c] = redge.w;
+        } else if (redge.w < minW[c]) {
+            best[c] = redge.j;
+            minW[c] = redge.w;
+        }
+    }
+}
+
+inline void prepare_send(const int nsend, int* sdispls, const map<int, int> best,
+                         vector<int>& sbuf, const vector<int> pre_check,
+                         vector<int>& to_check) {
+    to_check.resize(nsend);
+    sbuf.resize(nsend);
+    vector<int> counts(gsize, 0);
+    // #pragma omp parallel for reduction(vec_plus:counts)
+    for (int l = 0; l < nsend; l++) {
+        int i = pre_check[l];
+        int j = best.at(i);
+        int k = jlabels[j];
+        int pointer = sdispls[k] + counts[k];
+        to_check[pointer] = i;
+        sbuf[pointer] = j;
+        counts[k] += 1;
+    }
+}
+
+inline void alltoall_update(int* scounts, int* sdispls, vector<int>& sbuf,
+                            const map<int, int> best) {
+    vector<int> rbuf;
+    int* rcounts = new int[gsize];
+    int* rdispls = new int[gsize];
+
+    // 1st all to all
+    vector<int> n1(gsize), n2(gsize), s1(gsize), s2(gsize);
+#pragma omp parallel for
+    for (int i = 0; i < gsize; i++) {
+        n1[i] = 1;
+        n2[i] = 1;
+        s1[i] = i;
+        s2[i] = i;
+    }
+
+    MPI_Alltoallv(scounts, n1.data(), s1.data(), MPI_INT, rcounts, n2.data(), s2.data(),
+                  MPI_INT, MPI_COMM_WORLD);
+    //    MPI_Alltoall(scounts, 1, MPI_INT, rcounts, 1, MPI_INT, MPI_COMM_WORLD);
+    int k = 0;
+    for (int l = 0; l < gsize; l++) {
+        rdispls[l] = (l == 0) ? 0 : rdispls[l - 1] + rcounts[l - 1];
+        k += rcounts[l];
+    }
+    rbuf.resize(k);
+    MPI_Alltoallv(sbuf.data(), scounts, sdispls, MPI_INT, rbuf.data(), rcounts, rdispls,
+                  MPI_INT, MPI_COMM_WORLD);
+// update and 2nd all to all to send back new pointer
+#pragma omp parallel for
+    for (int l = 0; l < k; l++) {
+        int j = rbuf[l];
+        rbuf[l] = best.at(j);
+    }
+
+    MPI_Alltoallv(rbuf.data(), rcounts, rdispls, MPI_INT, sbuf.data(), scounts, sdispls,
+                  MPI_INT, MPI_COMM_WORLD);
+}
+
+inline void post_recv(const int n_check, int* scounts, const vector<int> sbuf,
+                      const vector<int> to_check, const vector<int> to_compare,
+                      vector<int>& pre_check, map<int, int>& best) {
+    int i, j, k;
+    for (int l = 0; l < gsize; l++) scounts[l] = 0;
+    pre_check.resize(0);
+    for (int l = 0; l < n_check; l++) {
+        i = to_check[l];
+        j = sbuf[l];  // new pointer
+        // A subtree that was not a root and whose pointer chain returns to itself lies
+        // on a cycle of minimum edges whose length is a power of two: all pointers
+        // double at once, so every member would point at itself and become a root of
+        // its own, and the cycle would never merge. Keeping the previous pointer leaves
+        // the cycle unresolved, so find_roots stalls and break_cycles_global joins it.
+        const bool closed_cycle = (j == i);
+        if (closed_cycle) j = to_compare[l];
+        best[i] = j;  // update
+        if (closed_cycle or
+            to_compare[l] != j) {  // root not found, need the next iteration
+            k = jlabels[j];
+            scounts[k] += 1;
+            pre_check.push_back(i);
+        }
+    }
+}
+
+// Points every subtree in I (left without a root by pointer jumping; J holds its
+// pointer) at the first member of its group, which becomes the group's root.
+void count_cycles(const vector<int> I, vector<int>& J) {
+    J = first_member_of_group(I, J);
+    KNN_DEBUG("cut MST: joined %zu subtree(s) caught in cycles", I.size());
+}
+
+void break_cycles_global(const vector<int> pre_check, vector<int>& roots) {
+    //
+    int n_check, rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    n_check = pre_check.size();
+    vector<int> counts(gsize);
+    MPI_Allgather(&n_check, 1, MPI_INT, counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+    int n_all = 0;
+    for (int i = 0; i < gsize; i++) n_all += counts[i];
+    int* rcounts = new int[gsize];
+    int* rdispls = new int[gsize];
+    vector<int> I1(n_all), J1(n_all);
+    if (rank == 0) {
+        for (int i = 0; i < gsize; i++) {
+            rcounts[i] = counts[i];
+            rdispls[i] = (i == 0) ? 0 : rdispls[i - 1] + rcounts[i - 1];
+        }
+    }
+    MPI_Gatherv(pre_check.data(), n_check, MPI_INT, I1.data(), rcounts, rdispls,
+                MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Gatherv(roots.data(), n_check, MPI_INT, J1.data(), rcounts, rdispls, MPI_INT, 0,
+                MPI_COMM_WORLD);
+
+    // break cycles
+    if (rank == 0) {
+        count_cycles(I1, J1);
+    }
+
+    // distribute new roots
+    MPI_Scatterv(J1.data(), rcounts, rdispls, MPI_INT, roots.data(), n_check, MPI_INT,
+                 0, MPI_COMM_WORLD);
+}
+
+void find_roots(const vector<int> C_local, map<int, int>& best) {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    int* scounts = new int[gsize];
+    int* sdispls = new int[gsize];
+    for (int l = 0; l < gsize; l++) scounts[l] = 0;
+
+    vector<int> pre_check, to_check, sbuf, to_compare;
+
+    int check_flag, n_check, i, j, k;
+    // I: break symmetry
+    int n_local = C_local.size();
+    // search local roots and assign pre_check
+    for (int l = 0; l < n_local; l++) {
+        i = C_local[l];
+        if (best[i] < 0) {
+            best[i] = i;  // a local root with no output edge
+        } else {
+            pre_check.push_back(i);
+            j = best[i];
+            k = jlabels[j];
+            scounts[k] += 1;
+        }
+    }
+    n_check = pre_check.size();
+
+    // assign: to_check, sbuf
+    for (int l = 0; l < gsize; l++)
+        sdispls[l] = (l == 0) ? 0 : sdispls[l - 1] + scounts[l - 1];
+    prepare_send(n_check, sdispls, best, sbuf, pre_check, to_check);
+    // update pointer
+    alltoall_update(scounts, sdispls, sbuf, best);
+    // find local roots and break symmetry
+    for (int l = 0; l < gsize; l++) scounts[l] = 0;
+    pre_check.resize(0);
+    for (int l = 0; l < n_check; l++) {
+        i = to_check[l];
+        j = sbuf[l];   // new pointer
+        if (i != j) {  // root not found
+            k = jlabels[j];
+            scounts[k] += 1;
+            pre_check.push_back(i);
+            best[i] = j;
+        } else if (i < best[i]) {
+            best[i] = i;  // a local root that is connected to another subtree
+        }
+    }
+    n_check = pre_check.size();
+    check_flag = countall(n_check);
+    // II: pointer jumping
+    map<int, int> best_copy(best);
+    int check_flag_old = -1;
+    int istep = 0;
+    while (check_flag > 0) {
+        // assign: to_check, sbuf
+        for (int l = 0; l < gsize; l++)
+            sdispls[l] = (l == 0) ? 0 : sdispls[l - 1] + scounts[l - 1];
+        prepare_send(n_check, sdispls, best, sbuf, pre_check, to_check);
+        to_compare = sbuf;
+        // all to all transpose to update pointer
+        alltoall_update(scounts, sdispls, sbuf, best);
+        // update best and pre_check for next iteration
+        post_recv(n_check, scounts, sbuf, to_check, to_compare, pre_check, best);
+        n_check = pre_check.size();
+        check_flag = countall(n_check);
+        if ((check_flag != 0) and (check_flag == check_flag_old)) {
+            vector<int> roots(n_check);
+            for (int l = 0; l < n_check; l++) {
+                int c = pre_check[l];
+                roots[l] = best_copy.at(c);
+            }
+            break_cycles_global(pre_check, roots);
+            for (int l = 0; l < n_check; l++) {
+                int c = pre_check[l];
+                best[c] = roots[l];
+            }
+            check_flag = 0;
+        }
+        check_flag_old = check_flag;
+    }
+}
+
+int update_roots(const map<int, int> best, vector<int>& C, vector<int>& C_local,
+                 vector<int>& roots, vector<edge_int>& crossE) {
+    int rank, n_start, n_end;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    n_start = ilabels[rank];
+    n_end = ilabels[rank + 1];
+
+    vector<int> sbuf, ordering;
+    int i, j, k, pointer;
+    int* scounts = new int[gsize];
+    int* sdispls = new int[gsize];
+    for (int l = 0; l < gsize; l++) scounts[l] = 0;
+
+    // 1. update roots
+    map<int, int> C_root, new_C;
+    int n_C = C.size();
+    sbuf.resize(n_C);
+    ordering.resize(n_C);
+    for (int l = 0; l < n_C; l++) {
+        k = jlabels[C[l]];
+        scounts[k] += 1;
+    }
+    vector<int> counts(gsize, 0);
+    for (int l = 0; l < gsize; l++)
+        sdispls[l] = (l == 0) ? 0 : sdispls[l - 1] + scounts[l - 1];
+    for (int l = 0; l < n_C; l++) {
+        i = C[l];
+        k = jlabels[i];
+        pointer = sdispls[k] + counts[k];
+        sbuf[pointer] = i;
+        ordering[l] = pointer;
+        counts[k] += 1;
+    }
+    alltoall_update(scounts, sdispls, sbuf, best);
+    // obtain: C_root, new_C
+    for (int l = 0; l < n_C; l++) {
+        i = C[l];
+        pointer = ordering[l];
+        j = sbuf[pointer];
+        C_root[i] = j;
+        new_C[j] = 1;
+    }
+
+    // update C and C_local
+    map<int, int>::iterator itr;
+    C.resize(0);
+    C_local.resize(0);
+    for (itr = new_C.begin(); itr != new_C.end(); ++itr) {
+        i = itr->first;
+        C.push_back(i);
+        if ((n_start <= i) and (i < n_end)) C_local.push_back(i);
+    }
+
+    // update roots
+    for (int l = 0; l < roots.size(); l++) {
+        i = roots[l];
+        roots[l] = C_root[i];
+    }
+    // recover roots
+    int* rcounts = new int[gsize];
+    int* rdispls = new int[gsize];
+    int n_root = roots.size();
+    fill(counts.begin(), counts.end(), 0);
+    MPI_Allgather(&n_root, 1, MPI_INT, counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+    int n_allroot = 0;
+    for (int l = 0; l < gsize; l++) {
+        n_allroot += counts[l];
+        rcounts[l] = counts[l];
+        rdispls[l] = (l == 0) ? 0 : rdispls[l - 1] + rcounts[l - 1];
+    }
+
+    vector<int> all_roots(n_allroot);
+    MPI_Allgatherv(roots.data(), n_root, MPI_INT, all_roots.data(), rcounts, rdispls,
+                   MPI_INT, MPI_COMM_WORLD);
+    // update edges
+    int nE = crossE.size();
+#pragma omp parallel for
+    for (int l = 0; l < nE; l++) {
+        if (crossE[l] >= 0) {
+            int i = all_roots[II[l]];
+            int j = all_roots[JJ[l]];
+            if (i != j) {
+                II[l] = i;
+                JJ[l] = j;
+            } else {
+                crossE[l] = (edge_int)-1;
+            }
+        }
+    }
+    n_C = C_local.size();
+    int n_tree = countall(n_C);
+    return n_tree;
+}
+
+void relabel(const vector<int> C_local, vector<int>& roots) {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    // relabel
+    int n = C_local.size();
+    vector<int> counts(gsize, 0);
+    MPI_Allgather(&n, 1, MPI_INT, counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+
+    int count = 0;
+    int* rcounts = new int[gsize];
+    int* rdispls = new int[gsize];
+    rdispls[0] = 0;
+    for (int l = 0; l < gsize; l++) {
+        rcounts[l] = counts[l];
+        count += counts[l];
+        if (l != 0) rdispls[l] = rdispls[l - 1] + rcounts[l - 1];
+    }
+    vector<int> rbuf(count);
+    MPI_Allgatherv(C_local.data(), n, MPI_INT, rbuf.data(), rcounts, rdispls, MPI_INT,
+                   MPI_COMM_WORLD);
+    map<int, int> newlabel;
+    int k = 0;
+    for (int l = 0; l < count; l++) {
+        newlabel[rbuf[l]] = k;  // reordering
+        k += 1;
+    }
+
+    // update roots
+    int i;
+    for (int l = 0; l < roots.size(); l++) {
+        i = newlabel[roots[l]];
+        roots[l] = i;
+    }
+}
+
+vector<int> cut_mst(const int n_ALLtrees, int& n_local, vector<edge_int>& crossE,
+                    const float* A) {
+    // n_ALLtrees: total number of subtrees over all processes
+    // n_local: # of subtress in local process
+
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    // declare new MPI type: Edgetype
+    MPI_Datatype Edgetype;
+    MPI_Datatype type[3] = {MPI_INT, MPI_INT, MPI_FLOAT};
+    int blocklen[3] = {1, 1, 1};
+    MPI_Aint disp[3];
+    disp[0] = offsetof(struct fullEdge, i);
+    disp[1] = offsetof(struct fullEdge, j);
+    disp[2] = offsetof(struct fullEdge, w);
+    MPI_Type_create_struct(3, blocklen, disp, type, &Edgetype);
+    MPI_Type_commit(&Edgetype);
+
+    int nE = crossE.size();
+    // Initialization:
+    // C: all roots involved with local process.
+    // C_local: a subset of C with roots onwed my local process := {i\inC: n_start< i <
+    // n_end}
+    int n_tree = n_ALLtrees;
+    int dn_tree = 1;
+    int n_tree_old;
+
+    vector<int> C, C_local, roots;
+    int n_start = ilabels[rank];
+    for (int l = 0; l < n_local; l++) C.push_back(n_start + l);
+    roots = C;
+    C_local = C;
+
+    vector<Edge> minE(n_ALLtrees);
+    map<int, int> best;
+
+    int istep = 0;
+    float w;
+    // Boruvka's iterations:
+    while (dn_tree > 0) {
+        // step 1: initialization
+        best.clear();  // \forall i\ in C_local
+#pragma omp parallel for
+        for (int c = 0; c < n_local; c++) {
+            int i = C[c];
+            minE[i] = {-1, sentinel};
+        }
+
+// step 2-1: select min edges locally: get minE
+#pragma omp parallel for
+        for (int l = 0; l < nE; l++) {
+            edge_int e = crossE[l];
+            if (e >= 0) {
+                int i = II[l];
+                pwrite(minE[i], JJ[l], A[e]);
+            }
+        }
+
+        // step 2-2: send min edges and sort globals min edges: get best
+        if (istep > 0) {
+            minimum_edges(Edgetype, C, C_local, minE, best);
+        } else {
+            for (int c = 0; c < n_local; c++) {
+                int i = C[c];
+                best[i] = minE[i].j;
+            }
+        }
+
+        // step 3: find roots: update best until roots found
+        find_roots(C_local, best);
+
+        // step 4: update for next ieteration: C, C_local, roots, crossE;
+        n_tree_old = n_tree;
+        n_tree = update_roots(best, C, C_local, roots, crossE);
+        int dn_tree_local = n_tree_old - n_tree;
+        dn_tree = countall(dn_tree_local);
+        n_local = C.size();
+        KNN_DEBUG("cut MST step %d: %d -> %d subtree(s)", istep, n_tree_old, n_tree);
+        if (knnlog::enabled(knnlog::debug)) {
+            int active = 0;
+            for (int l = 0; l < nE; l++) active += (crossE[l] >= 0);
+            KNN_DEBUG_EVERY_RANK("cut MST step %d: %d active cut edge(s)", istep,
+                                 active);
+        }
+        istep += 1;
+    }
+    KNN_INFO("cut MST: %d cluster(s) after %d Boruvka step(s)", n_tree, istep);
+
+    // relabel
+    relabel(C_local, roots);
+
+    return roots;
+}
