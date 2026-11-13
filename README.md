@@ -119,11 +119,10 @@ same graph (cluster numbering aside).
 ## Development
 
 ```bash
-uv sync           # editable install; rebuilds the C library when cpp/ changes
-make test         # pytest
-make lint         # ruff, mypy, clang-format
-make test-cli     # needs MPI: the CLI on 1-3 ranks against the library
-make test-wheel   # the built wheel on every supported Python
+make install      # editable install (uv sync); rebuilds the C library when cpp/ changes
+make check        # lint, Python and C/C++ tests
+make check-all    # also the MPI program on 1-7 ranks and the sanitizer builds (needs MPI)
+make              # every target, with a description
 ```
 
 [AGENTS.md](AGENTS.md) describes the code layout, conventions and verification steps;

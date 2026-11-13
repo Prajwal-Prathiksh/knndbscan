@@ -27,14 +27,14 @@ command-line program).
 Run from the repository root:
 
 ```bash
-make test           # pytest on the editable install
-make lint           # ruff, mypy, clang-format --dry-run
-make test-cpp       # C/C++ tests in cpp/tests (C API contract, MPI stand-in, cycle grouping)
-make test-cli       # builds the CLI against MPI; checks it on 1-7 ranks
-make test-sanitize  # all of the above against AddressSanitizer + UBSan builds
+make check          # lint, Python tests and C/C++ tests: no MPI needed
+make check-all      # check, plus the MPI program on 1-7 ranks and the sanitizer builds
 make test-wheel     # builds the wheel and runs the tests from it on every supported Python
 make test-dist PYTHONS=3.15 RESOLUTIONS=lowest-direct  # one cell of that matrix
 ```
+
+`make` lists every target (`test`, `test-cpp`, `test-cli`, `test-sanitize`, `lint`,
+`format`, ...); each one's description is the `##` comment on its line in the Makefile.
 
 - The expected results come from `tests/reference.py`, which computes kNN-DBSCAN from the
   paper's definitions with SciPy. Keep it an independent statement of the paper: never
