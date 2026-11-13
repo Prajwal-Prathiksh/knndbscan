@@ -129,6 +129,8 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests/reference.py is imported by several test modules.
+pythonpath = ["tests"]
 addopts = ["--import-mode=importlib"]
 markers = [
     "gpu: needs CuPy, cuML and a CUDA device (skipped otherwise)",

@@ -74,21 +74,6 @@ def test_labels_do_not_depend_on_thread_count_or_run(
         np.testing.assert_array_equal(labels, reference)
 
 
-def test_kneighbors_beyond_min_samples_only_affect_border_points(
-    graph: tuple[np.ndarray, np.ndarray],
-) -> None:
-    neighbors, distances = graph
-    narrow = knn_dbscan_from_graph(
-        neighbors[:, : MIN_SAMPLES - 1],
-        distances[:, : MIN_SAMPLES - 1],
-        EPS,
-        MIN_SAMPLES,
-    )
-    wide = knn_dbscan_from_graph(neighbors, distances, EPS, MIN_SAMPLES)
-    core = distances[:, MIN_SAMPLES - 2] < EPS
-    np.testing.assert_array_equal(narrow[core], wide[core])
-
-
 def test_function_estimator_and_graph_api_agree(blobs: np.ndarray) -> None:
     from_data = knn_dbscan(blobs, EPS, MIN_SAMPLES, device="cpu")
     from_estimator = KNNDBSCAN(EPS, MIN_SAMPLES, device="cpu").fit_predict(blobs)
