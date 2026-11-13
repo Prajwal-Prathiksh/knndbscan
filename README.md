@@ -1,94 +1,128 @@
-## kNN-DBSCAN
-A parallel implementation of kNN-DBSCAN given k-NNG using MPI and OpenMP.
+# knndbscan
 
-### Python Package
+Density-based clustering of kNN graphs: a Python package and C library implementing
+kNN-DBSCAN ([Chen, Ruys and Biros](https://arxiv.org/abs/2009.04552)), with a parallel C++
+core (OpenMP threads, and MPI ranks for the command-line program).
 
-**Install:**
+kNN-DBSCAN works from a k-nearest-neighbor graph instead of range queries, so it scales to
+high-dimensional data where DBSCAN's neighborhoods become expensive, and it accepts any kNN
+graph, exact or approximate.
 
-```sh
-make install        # Install in editable mode
-make install-debug  # Install with optimizations & debug symbols
+## Installation
+
+```bash
+pip install --index-url https://test.pypi.org/simple/ \
+    --extra-index-url https://pypi.org/simple/ knndbscan
 ```
 
-**Test:**
+| | |
+|---|---|
+| Python | 3.10 and later, including free-threaded builds. One wheel per platform serves every version. |
+| Platforms | Linux (x86_64, aarch64; glibc 2.28+) and macOS (Apple Silicon). |
+| Dependencies | NumPy and scikit-learn. No MPI, compiler or CUDA needed. |
+| GPU neighbor search | `pip install "knndbscan[gpu]"` adds CuPy and cuML (CUDA 12, Linux). |
 
-```sh
-make test           # Run unit tests
-make test-examples  # Run example scripts (benchmarking, visualization)
+With `uv`, keep the other packages on PyPI by pinning only knndbscan to TestPyPI:
+
+```toml
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+explicit = true
+
+[tool.uv.sources]
+knndbscan = { index = "testpypi" }
 ```
 
-**Development:**
+## Quick start
 
-```sh
-make lint        # Lint code (ruff, mypy)
-make format      # Format code (ruff)
-make build       # Build wheel & sdist
-make clean       # Remove build artifacts
-make dev         # Sync all dev dependencies
+```python
+from sklearn.datasets import make_moons
+
+from knndbscan import KNNDBSCAN, knn_dbscan, knn_dbscan_from_graph
+
+X, _ = make_moons(n_samples=100_000, noise=0.06, random_state=0)
+
+labels = knn_dbscan(X, eps=0.05, min_samples=15, n_jobs=-1)  # -1 for noise
+
+model = KNNDBSCAN(eps=0.05, min_samples=15, n_jobs=-1).fit(X)  # scikit-learn estimator
+model.labels_, model.core_sample_indices_
+
+# Or bring your own kNN graph (exact, or approximate from FAISS, pynndescent, ...):
+# rows sorted by distance, each point excluded from its own row.
+from sklearn.neighbors import NearestNeighbors
+
+distances, neighbors = NearestNeighbors(n_neighbors=14).fit(X).kneighbors()
+labels = knn_dbscan_from_graph(neighbors, distances, eps=0.05, min_samples=15)
 ```
 
-### Standalone C++ Build
-```sh
-cd test/ && make
+## How the results relate to DBSCAN
+
+- **Core points are DBSCAN's**, except that the radius test is strict: a point is a core
+  point when its `(min_samples - 1)`-th nearest neighbor (the point itself counts towards
+  `min_samples`, as in scikit-learn) lies at a distance `< eps`.
+- **Clusters can differ.** Two core points are linked only through kNN edges: one must be
+  among the other's `min_samples - 1` nearest neighbors. kNN-DBSCAN can therefore split a
+  cluster that DBSCAN joins through a sparse bridge. More neighbors in a precomputed graph
+  change only how border points are attached, not the clusters.
+- **Labels** are `0..n_clusters-1`, numbered by each cluster's lowest-indexed point, and
+  `-1` for noise. They do not depend on the number of threads.
+
+`examples/compare_with_dbscan.py` runs both algorithms side by side.
+
+## Command-line program (MPI)
+
+For graphs too large for one machine, the command-line program splits the rows across MPI
+ranks. It needs an MPI installation (`mpicxx`, `mpiexec`):
+
+```bash
+make cli                                    # builds build/cli/knndbscan
+mpiexec -n 4 build/cli/knndbscan -n 70000 -e 1300.0 -m 100 -k 100 -t 4 \
+    -i mnist70k.knn.txt -o labels.txt
 ```
 
-### C++ Usage
-Run kNN-DBSCAN with ε=1300.0, k=100 on kNN graph with 4 MPI tasks and 4 threads:
-```sh
-cd test/
-ibrun -np 4 ./knndbscan -n 70000 -e 1300.0 -m 100 -i mnist70k.knn.txt -k 100 -o labels.txt -t 4
+| Flag | Meaning |
+|---|---|
+| `-n` | number of points |
+| `-e` | `eps` |
+| `-m` | `min_samples` |
+| `-k` | neighbors per line of the input file, including the point itself (at least `-m`) |
+| `-t` | OpenMP threads per rank |
+| `-i`, `-o` | input graph file, output labels file (one label per line) |
+
+Each input line is `point_id distance_1 neighbor_1 distance_2 neighbor_2 ...`, sorted by
+distance and **including the point itself** at distance 0, for example `7 0.0 7 1.0 10 2.0 11`.
+The program drops the point from its row, so its results equal the Python package's on the
+same graph (cluster numbering aside).
+
+## Development
+
+```bash
+uv sync           # editable install; rebuilds the C library when cpp/ changes
+make test         # pytest
+make lint         # ruff, mypy, clang-format
+make test-cli     # needs MPI: the CLI on 1-3 ranks against the library
+make test-wheel   # the built wheel on every supported Python
 ```
 
-**Arguments:**
-- `-n`: Number of points
-- `-e`: Epsilon (radius for core points)  
-- `-m`: MinPts (minimum points for dense region). Note: MinPts should be k + 1.
-- `-i`: Input kNN graph file
-- `-k`: Number of neighbors per point
-- `-o`: Output labels file
-- `-t`: Threads per MPI task
-
-
-### File Formats
-
-**kNN Graph:** Each line contains a point's k neighbors:
-```
-point_id distance1 neighbor1_id distance2 neighbor2_id ...
-```
-
-For example, k = 3, point 7 has 3 nearest neighbors, being (7, 0.00), (10, 1.0), and (11, 2.0).
-This point is represented as:
-```
-7 0.00 7 1.0 10 2.0 11
-```
-> [!NOTE]
-> For a given point, its own ID **must** be included as a neighbor with distance 0.0.
-> This requirement stems from the core point detection algorithm in [`src/clusters.cpp:43`](src/clusters.cpp#L43), 
-> which uses direct array indexing `A[p*maxk + minPts-2]` to find the distance to the (minPts-1)th 
-> nearest neighbor, assuming the self-neighbor is always at index 0.
-
-**Output:** One integer per line (cluster ID or -1 for noise)
+[AGENTS.md](AGENTS.md) describes the code layout, conventions and verification steps;
+[docs/RELEASING.md](docs/RELEASING.md) the release process.
 
 ## Citation
 
-If you use this software in your research, please cite the following paper:
-
-**BibTeX:**
 ```bibtex
 @misc{chen2024knndbscandbscanhighdimensions,
-      title={KNN-DBSCAN: a DBSCAN in high dimensions}, 
+      title={KNN-DBSCAN: a DBSCAN in high dimensions},
       author={Youguang Chen and William Ruys and George Biros},
       year={2024},
       eprint={2009.04552},
       archivePrefix={arXiv},
       primaryClass={cs.DC},
-      url={https://arxiv.org/abs/2009.04552}, 
+      url={https://arxiv.org/abs/2009.04552},
 }
 ```
 
-**Plain text:**
-> Chen, Y., Ruys, W., & Biros, G. (2024). KNN-DBSCAN: a DBSCAN in high dimensions. arXiv preprint arXiv:2009.04552.
-
-**Paper:** [KNN-DBSCAN: a DBSCAN in high dimensions](https://arxiv.org/abs/2009.04552)
-
-
+The algorithm core is the SC20 implementation from
+[ut-padas/knndbscan](https://github.com/ut-padas/knndbscan);
+[docs/sc20_environment.txt](docs/sc20_environment.txt) records the environment of the
+paper's runs.

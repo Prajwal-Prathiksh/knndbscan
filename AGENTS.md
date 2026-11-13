@@ -24,8 +24,9 @@ Run from the repository root:
 ```bash
 make test        # pytest on the editable install
 make lint        # ruff, mypy, clang-format --dry-run
-make test-cli    # builds the CLI against MPI; compares 1 and 2 ranks with the Python result
+make test-cli    # builds the CLI against MPI; compares 1-3 ranks with the Python result
 make test-wheel  # builds the wheel and runs the tests from it on every supported Python
+make test-dist PYTHONS=3.15 RESOLUTIONS=lowest-direct  # one cell of that matrix
 ```
 
 - `make test-wheel` is the check that matters for packaging: it installs the built wheel
@@ -34,6 +35,8 @@ make test-wheel  # builds the wheel and runs the tests from it on every supporte
   `CMakeLists.txt`, `cpp/capi.cpp` or `src/knndbscan/_native.py`.
 - Clustering results must not depend on the thread count or the number of MPI ranks;
   `tests/test_cluster.py` and `tests/test_cli.py` check both. Treat any difference as a bug.
+- GPU tests (`tests/test_gpu.py`) skip without CuPy, cuML and a CUDA device; run them on a
+  GPU machine after touching `neighbors.py`. CI has no GPU.
 - A change to `cpp/core/` must leave the labels of the whole test suite unchanged unless
   the change is meant to alter them; say so and justify it in the commit message.
 
@@ -67,7 +70,8 @@ Names (use them in code, docstrings, messages and docs):
   between core points among each one's first `min_samples - 1` neighbors. This is
   kNN-DBSCAN, not DBSCAN: it can split a cluster that DBSCAN would join, and extra
   neighbors beyond `min_samples - 1` only change how border points are assigned.
-- **Labels**: `0..n_clusters-1` for clusters, `-1` for noise.
+- **Labels**: `0..n_clusters-1` for clusters, numbered in order of each cluster's
+  lowest-indexed point (`cpp/capi.cpp` renumbers the core's output), and `-1` for noise.
 
 ## The algorithm core (`cpp/core/`)
 
@@ -88,8 +92,10 @@ Names (use them in code, docstrings, messages and docs):
 ## Code changes
 
 - Before adding a helper, search for an existing one and reuse or extend it. Do not add
-  small single-use functions, and do not duplicate logic a module already owns (input
-  validation lives in `cpp/capi.cpp`, graph construction in `neighbors.py`).
+  small single-use functions, and do not duplicate logic a module already owns. Graph
+  validation lives in `cpp/capi.cpp`; `_native.py` checks only what ctypes needs before
+  the call (dtypes, shapes, sizes that fit int32). Graph construction lives in
+  `neighbors.py`.
 - A name another module imports or calls is part of its module's API: no leading
   underscore. `_name` stays inside its module (and its class); tests may still reach in.
 - When existing code gains new behaviour, rename the function, its docstring and related
@@ -165,6 +171,7 @@ docstrings should carry the context the code cannot express.
 # Bad
 def drop_self(indices, distances):
     """Drop self from the neighbors."""
+
 
 # Good
 def drop_self(indices, distances):
