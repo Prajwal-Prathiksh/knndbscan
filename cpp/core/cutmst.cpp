@@ -189,9 +189,17 @@ inline void post_recv(const int n_check, int* scounts, const vector<int> sbuf,
     pre_check.resize(0);
     for (int l = 0; l < n_check; l++) {
         i = to_check[l];
-        j = sbuf[l];               // new pointer
-        best[i] = j;               // update
-        if (to_compare[l] != j) {  // root not found, need the next iteration
+        j = sbuf[l];  // new pointer
+        // A subtree that was not a root and whose pointer chain returns to itself lies
+        // on a cycle of minimum edges whose length is a power of two: all pointers
+        // double at once, so every member would point at itself and become a root of
+        // its own, and the cycle would never merge. Keeping the previous pointer leaves
+        // the cycle unresolved, so find_roots stalls and break_cycles_global joins it.
+        const bool closed_cycle = (j == i);
+        if (closed_cycle) j = to_compare[l];
+        best[i] = j;  // update
+        if (closed_cycle or
+            to_compare[l] != j) {  // root not found, need the next iteration
             k = jlabels[j];
             scounts[k] += 1;
             pre_check.push_back(i);
@@ -208,78 +216,34 @@ inline int countall(const int n) {
     return n_all;
 }
 
+// Groups the subtrees I[l] left without a root by pointer jumping, through their
+// pointers I[l] -> J[l] (each group holds one cycle of minimum edges and the subtrees
+// leading into it), and points every member at the group's first subtree in I, its new
+// root. A union-find is required: merging groups by overwriting one representative's
+// pointer, without first finding its root, can chain representatives into a cycle of
+// three or more that the pointer jumping below it would follow forever.
 void count_cycles(const vector<int> I, vector<int>& J) {
-    // using the similar way as forming the local branches
-    map<int, int> R;
-    int k = I.size();
-
+    const int k = I.size();
+    map<int, int> parent;
     for (int l = 0; l < k; l++) {
-        R[I[l]] = -1;
+        parent.emplace(I[l], I[l]);
+        parent.emplace(J[l], J[l]);
     }
-
-    map<int, int> r_index;
-    int i, j, r, s;
-    int n_local = 0;
-
-    for (int l = 0; l < k; l++) {
-        i = I[l];
-        j = J[l];
-        if (R[i] < 0) {
-            if (R[j] < 0) {
-                R[i] = n_local;
-                R[j] = n_local;
-                r_index[n_local] = n_local;
-                n_local += 1;
-            } else {
-                R[i] = R[j];
-            }
-        } else {
-            if (R[j] < 0) {
-                R[j] = R[i];
-            } else {
-                r = R[i];
-                s = R[j];
-                if (r_index[r] != r_index[s]) {
-                    r_index[r] = r_index[s];
-                    R[i] = s;
-                }
-            }
+    auto find = [&parent](int x) {
+        int root = x;
+        while (parent[root] != root) root = parent[root];
+        while (parent[x] != root) {
+            const int next = parent[x];
+            parent[x] = root;
+            x = next;
         }
-    }
+        return root;
+    };
+    for (int l = 0; l < k; l++) parent[find(I[l])] = find(J[l]);
 
-    // break symmetry
-    for (int l = 0; l < r_index.size(); l++) {
-        r = r_index[l];
-        s = r_index[r];
-        if ((s == l) and (l < r)) r_index[l] = l;
-    }
-
-    int n_cycles = 0;
-    map<int, point_int> roots;
-    for (int l = 0; l < n_local; l++) {
-        if (r_index[l] == l) {
-            n_cycles += 1;
-            roots[l] = -1;
-        } else {
-            while (r_index[r_index[l]] != r_index[l]) {
-                r_index[l] = r_index[r_index[l]];
-            }
-        }
-    }
-    cout << "number of points and cycles:" << k << " " << n_cycles << endl;
-
-    // update roots
-    int c;
-    for (int l = 0; l < k; l++) {
-        i = I[l];
-        c = r_index[R[i]];
-        if (roots[c] == -1) {
-            roots[c] = i;
-            J[l] = i;
-        } else {
-            J[l] = roots[c];
-        }
-    }
+    map<int, int> group_root;
+    for (int l = 0; l < k; l++) group_root.emplace(find(I[l]), I[l]);
+    for (int l = 0; l < k; l++) J[l] = group_root[find(I[l])];
 }
 
 void break_cycles_global(const vector<int> pre_check, vector<int>& roots) {
