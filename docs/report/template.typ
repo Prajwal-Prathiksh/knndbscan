@@ -35,6 +35,21 @@
   _Proof._ #body #h(1fr) $square$
 ]
 
+// Pseudocode conventions (with lovelace: `pseudocode-list(..pseudocode-style)[...]`):
+// keywords in bold, comments as small grey italics after `//`, no end keywords and no
+// indentation guides, Require/Ensure lines unnumbered.
+#let comment-colour = luma(135)
+#let pseudocode-style = (stroke: none, indentation: 1.3em, line-gap: 0.55em)
+// A comment at the right end of a line.
+#let cmt(body) = {
+  h(1fr)
+  text(fill: comment-colour, size: 0.88em, style: "italic")[#"//" #body]
+}
+// A comment on a line of its own.
+#let lcmt(body) = text(fill: comment-colour, size: 0.88em, style: "italic")[#"//" #body]
+#let require(body) = [*Require:* #body]
+#let ensure(body) = [*Ensure:* #body]
+
 // A numbered algorithm; the body is usually a pseudocode list.
 #let algorithm(caption: none, body) = figure(
   kind: "algorithm",

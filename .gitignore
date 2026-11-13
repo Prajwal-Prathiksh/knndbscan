@@ -22,5 +22,5 @@ htmlcov/
 # Local files
 .env
 .vscode/
-figures/
-tmp/
+/figures/
+/tmp/

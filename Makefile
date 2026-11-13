@@ -123,6 +123,10 @@ test-dist: ## Test dist/*.whl on each of PYTHONS x RESOLUTIONS, in fresh environ
 report: ## Compile docs/report/knndbscan.typ to PDF (needs typst)
 	typst compile docs/report/knndbscan.typ docs/report/knndbscan.pdf
 
+.PHONY: report-figures
+report-figures: ## Regenerate the report's example figures (docs/report/figures/*.svg)
+	uv run python docs/report/figures/make_figures.py
+
 ##@ Programs
 
 .PHONY: cli
