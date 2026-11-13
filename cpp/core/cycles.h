@@ -1,6 +1,6 @@
 // Grouping of the subtrees that pointer jumping leaves without a root, shared by the
-// local (mst_omp.cpp: break_cycles) and distributed (cutmst.cpp: count_cycles) Boruvka
-// steps.
+// local (local_mst.cpp: break_cycles) and distributed (cut_mst.cpp: count_cycles)
+// Boruvka steps.
 #ifndef KNNDBSCAN_CYCLES_H
 #define KNNDBSCAN_CYCLES_H
 

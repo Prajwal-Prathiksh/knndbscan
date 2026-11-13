@@ -25,7 +25,7 @@ static void test_world_has_one_rank() {
     CHECK(rank == 0 && size == 1);
 }
 
-// cutmst.cpp sends fullEdge with exactly this construction; a member added to the
+// cut_mst.cpp sends fullEdge with exactly this construction; a member added to the
 // struct without updating it would make the extent and sizeof disagree.
 static void test_struct_types_have_the_extent_of_their_structs() {
     MPI_Datatype full_type, edge_type;

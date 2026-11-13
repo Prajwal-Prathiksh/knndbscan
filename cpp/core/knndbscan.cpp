@@ -1,8 +1,13 @@
+// kNN-DBSCAN (Algorithm 1 of Chen, Ruys and Biros): the entry point knndbscan() and
+// the core's global state. The core is a unity build: this file includes every stage,
+// and each stage includes the headers it needs.
+#include "border_points.cpp"
 #include "cut_edges.cpp"
 #include "cut_mst.cpp"
 #include "globals.h"
 #include "local_mst.cpp"
 #include "log.h"
+#include "partition.h"
 using namespace std;
 
 int gsize = 0;
@@ -66,7 +71,7 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
     int n_tree;
     vector<point_int> C = core;
     vector<edge_int> crossE;
-    n_tree = localmst_omp(n, ISTART, JA, A, R, C, core, crossE);
+    n_tree = local_mst(n, ISTART, JA, A, R, C, core, crossE);
     int nE = crossE.size();
     MPI_Barrier(MPI_COMM_WORLD);
     double t_local = MPI_Wtime();
@@ -99,7 +104,7 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
               (long long)max_nE, avg_nE);
 
     // IV: update cut edges
-    update_cutedges(n0, ISTART, R, label, JA, A, crossE);
+    update_cut_edges(n0, ISTART, R, label, JA, A, crossE);
     MPI_Barrier(MPI_COMM_WORLD);
 
     double t_cutE = MPI_Wtime();
@@ -108,7 +113,7 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
 
     // V: construct cut mst: R
     vector<int> roots;
-    roots = cutmst(n_ALLtrees, n_tree, crossE, A);
+    roots = cut_mst(n_ALLtrees, n_tree, crossE, A);
 
     map<int, int>::iterator itr;
     point_int u;
@@ -131,7 +136,7 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
     KNN_INFO("cut MST in %.3e s", t_cutmst - t_cutE);
 
     // VI: mark border points
-    label_borders(n0, n, ISTART, R, JA, A);
+    label_border_points(n0, n, ISTART, R, JA, A);
     MPI_Barrier(MPI_COMM_WORLD);
     double t_end = MPI_Wtime();
 

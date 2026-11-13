@@ -1,4 +1,4 @@
-"""Tests of the public API on the CPU: agreement with DBSCAN, invariances and input checks."""
+"""The public API on the CPU: input checks, independence from threads and array layout, the estimator."""
 
 from concurrent.futures import ThreadPoolExecutor
 from importlib.metadata import version

@@ -1,37 +1,14 @@
+// Stage V of knndbscan() (Algorithm 4): Boruvka over the subtrees left by the local
+// MST, joined through cut edges between ranks. Each subtree is owned by one rank, which
+// combines the candidate minimum edges other ranks send it; roots are found by
+// distributed pointer jumping, and cycles of minimum edges are joined on rank 0.
+// Part of the unity build of knndbscan.cpp.
 #include "cycles.h"
 #include "globals.h"
 #include "log.h"
+#include "min_edges.h"
+#include "partition.h"
 using namespace std;
-
-inline int find_parent(const int i) {
-    int parent = -1;
-    int k = 0;
-    while (parent < 0) {
-        if ((ilabels[k] <= i) and (i < ilabels[k + 1])) parent = k;
-        k += 1;
-    }
-    return parent;
-}
-
-inline bool cas_2(Edge& e_old, const float w_old, const point_int j_new,
-                  const float w_new) {
-    if (e_old.w == w_old) {
-        e_old = {j_new, w_new};
-        return true;  // swap success, and terminate write
-    } else {
-        return false;  // swap failed, need to check if it is still necessary for swap
-    }
-}
-
-inline void pwrite_2(Edge& e_old, const point_int j_new, const float w_new) {
-    // compare and swap smaller edges
-    float w_old;
-    do {
-        w_old = e_old.w;
-    } while ((w_new < w_old) and (cas_2(e_old, w_old, j_new, w_new)));
-    // the first condition determines if it is necessary to swap
-    // the second condition determines if the swap is successed.
-}
 
 void minimum_edges(MPI_Datatype Edgetype, const vector<int> C,
                    const vector<int> C_local, const vector<Edge> minE,
@@ -209,15 +186,6 @@ inline void post_recv(const int n_check, int* scounts, const vector<int> sbuf,
     }
 }
 
-inline int countall(const int n) {
-    int n_all = 0;
-    vector<int> counts(gsize);
-
-    MPI_Allgather(&n, 1, MPI_INT, counts.data(), 1, MPI_INT, MPI_COMM_WORLD);
-    for (int i = 0; i < gsize; i++) n_all += counts[i];
-    return n_all;
-}
-
 // Points every subtree in I (left without a root by pointer jumping; J holds its
 // pointer) at the first member of its group, which becomes the group's root.
 void count_cycles(const vector<int> I, vector<int>& J) {
@@ -256,40 +224,6 @@ void break_cycles_global(const vector<int> pre_check, vector<int>& roots) {
     // distribute new roots
     MPI_Scatterv(J1.data(), rcounts, rdispls, MPI_INT, roots.data(), n_check, MPI_INT,
                  0, MPI_COMM_WORLD);
-}
-
-void output_best(const map<int, int> best, const string name) {
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    int istart = ilabels[rank];
-    int iend = ilabels[rank + 1];
-    int n_all = ilabels[gsize];
-    int nbuf = iend - istart;
-    vector<int> sbuf(nbuf);
-    for (int i = 0; i < nbuf; i++) sbuf[i] = best.at(istart + i);
-
-    int* rcounts = new int[gsize];
-    int* rdispls = new int[gsize];
-    if (rank == 0) {
-        for (int i = 0; i < gsize; i++) {
-            rcounts[i] = ilabels[i + 1] - ilabels[i];
-            rdispls[i] = (i == 0) ? 0 : rdispls[i - 1] + rcounts[i - 1];
-        }
-    }
-
-    vector<int> rbuf;
-    if (rank == 0) rbuf.resize(n_all);
-    MPI_Gatherv(sbuf.data(), nbuf, MPI_INT, rbuf.data(), rcounts, rdispls, MPI_INT, 0,
-                MPI_COMM_WORLD);
-
-    if (rank == 0) {
-        ofstream fout;
-        fout.open(name);
-        for (int i = 0; i < n_all; i++) {
-            fout << i << "  " << rbuf[i] << "\n";
-        }
-        fout.close();
-    }
 }
 
 void find_roots(const vector<int> C_local, map<int, int>& best) {
@@ -504,155 +438,8 @@ void relabel(const vector<int> C_local, vector<int>& roots) {
     }
 }
 
-inline void label_subtrees(const int rank, const int n_tree, const vector<int> n_trees,
-                           const vector<point_int> C, int& n_start, int& n_ALLtrees,
-                           map<point_int, int>& label) {
-    n_start = 0;
-    for (int l = 0; l < rank; l++) n_start += n_trees[l];
-    for (int l = 0; l < n_tree; l++) label[C[l]] = n_start + l;
-    n_ALLtrees = 0;
-    ilabels.resize(gsize + 1);
-    ilabels[0] = 0;
-    for (int l = 0; l < gsize; l++) {
-        n_ALLtrees += n_trees[l];
-        ilabels[l + 1] = n_ALLtrees;
-    }
-    jlabels.resize(n_ALLtrees);
-#pragma omp parallel for
-    for (int l = 0; l < n_ALLtrees; l++) {
-        jlabels[l] = find_parent(l);
-    }
-}
-
-void label_borders(const point_int n0, const point_int n, const point_int ISTART,
-                   vector<point_int>& R, const point_int* JA, const float* A) {
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    // sort borders
-    vector<Cycle> borders;
-#pragma omp parallel for reduction(merge_Cycle : borders)
-    for (point_int p = 0; p < n; p++) {
-        edge_int m = p * maxk;
-        if ((R[p] == -1) and (A[m] <= eps)) {  // non-core point and not obvious noise
-            Cycle e = {p, -1};
-            while (A[m] <= eps) {
-                point_int q = JA[m] - ISTART;
-                if ((q < 0) or (q >= n)) {
-                    m += 1;
-                } else if (R[q] > -1) {
-                    e.j = R[q];
-                    break;
-                } else {
-                    m += 1;
-                }
-            }
-            borders.push_back(e);
-        }
-    }
-    int n_borders = borders.size();
-
-    // sort crossE
-    vector<edge_int> crossE;
-#pragma omp parallel for reduction(merge_edgeint : crossE)
-    for (int l = 0; l < n_borders; l++) {
-        Cycle e = borders[l];
-        if (e.j == -1) {  // only points need to be checked
-            point_int p = e.i;
-            edge_int m = p * maxk;
-            while (A[m] <= eps) {
-                point_int q = JA[m] - ISTART;
-                if ((q < 0) or (q >= n)) crossE.push_back(m);
-                m += 1;
-            }
-        }
-    }
-
-    // find border points and update their roots from information of crossedges
-    vector<point_int> sbuf, rbuf, ordering;
-    int* scounts = new int[gsize];
-    int* sdispls = new int[gsize];
-    int* rcounts = new int[gsize];
-    int* rdispls = new int[gsize];
-    for (int l = 0; l < gsize; l++) scounts[l] = 0;
-
-    int nE = crossE.size();
-    int i, j, k, pointer;
-    // prepare send
-    for (int l = 0; l < nE; l++) {
-        j = JA[crossE[l]];
-        k = floor((double)j / (double)n0);
-        scounts[k] += 1;
-    }
-    for (int l = 0; l < gsize; l++)
-        sdispls[l] = (l == 0) ? 0 : sdispls[l - 1] + scounts[l - 1];
-    sbuf.resize(nE);
-    ordering.resize(nE);
-    vector<int> counts(gsize, 0);
-    for (int l = 0; l < nE; l++) {
-        j = JA[crossE[l]];
-        k = floor((double)j / (double)n0);
-        pointer = sdispls[k] + counts[k];
-        sbuf[pointer] = j;
-        ordering[l] = pointer;
-        counts[k] += 1;
-    }
-    // 1st all to all
-    MPI_Alltoall(scounts, 1, MPI_INT, rcounts, 1, MPI_INT, MPI_COMM_WORLD);
-    k = 0;
-    for (int l = 0; l < gsize; l++) {
-        rdispls[l] = (l == 0) ? 0 : rdispls[l - 1] + rcounts[l - 1];
-        k += rcounts[l];
-    }
-    rbuf.resize(k);
-    MPI_Alltoallv(sbuf.data(), scounts, sdispls, MPI_INT, rbuf.data(), rcounts, rdispls,
-                  MPI_INT, MPI_COMM_WORLD);
-
-    // update and 2nd all to all to send back new pointer
-    for (int l = 0; l < k; l++) {
-        j = rbuf[l] - ISTART;
-        rbuf[l] = R[j];
-    }
-    MPI_Alltoallv(rbuf.data(), rcounts, rdispls, MPI_INT, sbuf.data(), scounts, sdispls,
-                  MPI_INT, MPI_COMM_WORLD);
-
-    // check if border and change R
-    edge_int r;
-    for (int l = 0; l < nE; l++) {
-        r = crossE[l];
-        i = floor((double)r / (double)maxk);
-        if (R[i] == -1) {  // need to check
-            pointer = ordering[l];
-            R[i] = sbuf[pointer];
-        }
-    }
-
-    // update border points from local information: using borders
-    Cycle c;
-    for (int l = 0; l < n_borders; l++) {
-        c = borders[l];
-        if (c.j >= 0) R[c.i] = c.j;
-    }
-}
-
-inline void count_points(const int rank, const point_int N, point_int& n0, point_int& n,
-                         point_int& ISTART) {
-    point_int n1, p;
-
-    n0 = ceil((double)N / (double)gsize);
-    p = ceil((double)N / (double)n0);
-    n1 = N - n0 * (p - 1);
-    n = n0;
-    ISTART = n0 * rank;
-    if (rank == p - 1) {
-        n = n1;
-    } else if (rank > p - 1) {
-        n = 0;
-        ISTART = N;
-    }
-}
-
-vector<int> cutmst(const int n_ALLtrees, int& n_local, vector<edge_int>& crossE,
-                   const float* A) {
+vector<int> cut_mst(const int n_ALLtrees, int& n_local, vector<edge_int>& crossE,
+                    const float* A) {
     // n_ALLtrees: total number of subtrees over all processes
     // n_local: # of subtress in local process
 
@@ -706,7 +493,7 @@ vector<int> cutmst(const int n_ALLtrees, int& n_local, vector<edge_int>& crossE,
             edge_int e = crossE[l];
             if (e >= 0) {
                 int i = II[l];
-                pwrite_2(minE[i], JJ[l], A[e]);
+                pwrite(minE[i], JJ[l], A[e]);
             }
         }
 

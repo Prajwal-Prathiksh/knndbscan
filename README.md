@@ -82,8 +82,8 @@ step at DEBUG. It is silent until you enable it:
 ```python
 import logging
 
-logging.basicConfig(level=logging.INFO)                  # everything, INFO and up
-logging.getLogger("knndbscan").setLevel(logging.DEBUG)   # or only knndbscan, in detail
+logging.basicConfig(level=logging.INFO)  # everything, INFO and up
+logging.getLogger("knndbscan").setLevel(logging.DEBUG)  # or only knndbscan, in detail
 ```
 
 The level is read on every call, and disabled messages are never formatted, so logging
@@ -127,6 +127,7 @@ make test-wheel   # the built wheel on every supported Python
 ```
 
 [AGENTS.md](AGENTS.md) describes the code layout, conventions and verification steps;
+[docs/ALGORITHM.md](docs/ALGORITHM.md) how the code implements the paper;
 [docs/RELEASING.md](docs/RELEASING.md) the release process.
 
 ## License

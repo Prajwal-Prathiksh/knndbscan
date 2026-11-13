@@ -51,7 +51,7 @@ make test-dist PYTHONS=3.15 RESOLUTIONS=lowest-direct  # one cell of that matrix
   and the oldest allowed dependency versions. Run it after any change to `pyproject.toml`,
   `CMakeLists.txt`, `cpp/capi.cpp` or `src/knndbscan/_native.py`.
 - Clustering results must not depend on the thread count or the number of MPI ranks;
-  `tests/test_cluster.py` and `tests/test_cli.py` check both. Treat any difference as a bug.
+  `tests/test_api.py` and `tests/test_cli.py` check both. Treat any difference as a bug.
 - GPU tests (`tests/test_gpu.py`) skip without CuPy, cuML and a CUDA device; run them on a
   GPU machine after touching `neighbors.py`. CI has no GPU.
 - A change to `cpp/core/` must leave the labels of the whole test suite unchanged unless
@@ -64,13 +64,13 @@ make test-dist PYTHONS=3.15 RESOLUTIONS=lowest-direct  # one cell of that matrix
 | `cpp/include/knndbscan.h` | The public C API: the only symbols the shared library exports. |
 | `cpp/capi.cpp` | The C API implementation: input validation, the call lock, error messages. |
 | `cpp/mpi_serial.h` | A single-process implementation of the MPI calls the core makes. |
-| `cpp/core/` | The kNN-DBSCAN algorithm (Borůvka MST over the kNN graph, distributed with MPI, threaded with OpenMP); `cycles.h` groups the subtrees caught in cycles of minimum edges, for both the local and the distributed MST. |
+| `cpp/core/` | The kNN-DBSCAN algorithm (Borůvka MST over the kNN graph, distributed with MPI, threaded with OpenMP), one file per stage; see docs/ALGORITHM.md. |
 | `cpp/tests/` | C and C++ tests run by CTest (`make test-cpp`). |
 | `cpp/cli/knndbscan_cli.cpp` | Command-line program: reads a kNN-graph text file and runs on any number of MPI ranks. |
 | `src/knndbscan/` | The Python package: `_native.py` (ctypes binding), `cluster.py` (public API), `neighbors.py` (kNN graphs on CPU or GPU). |
 | `tests/` | pytest suite; `reference.py` is the independent reference implementation. |
 | `examples/` | Runnable examples (`uv run python examples/<name>.py`). |
-| `docs/` | Documentation other than README.md and AGENTS.md (releasing, SC20 environment). |
+| `docs/` | ALGORITHM.md (paper to code), RELEASING.md, the SC20 environment. |
 
 - `src/knndbscan/__init__.py` re-exports the public API; import from `knndbscan`, not from
   the module a name lives in.
@@ -95,9 +95,12 @@ Names (use them in code, docstrings, messages and docs):
 
 ## The algorithm core (`cpp/core/`)
 
-`cpp/core/` is the SC20 implementation from ut-padas/knndbscan. It is a unity build:
-`clusters.cpp` includes the other `.cpp` files, and its state lives in globals declared in
-`globals.h`. That shapes how it may be changed:
+`cpp/core/` is the SC20 implementation from ut-padas/knndbscan, reorganized by stage.
+[docs/ALGORITHM.md](docs/ALGORITHM.md) maps each stage of the paper to its file and
+function, explains how work is split over MPI ranks, and lists the invariants the results
+depend on: read it before changing the core. It is a unity build (`knndbscan.cpp`
+includes every stage), and its state lives in globals declared in `globals.h`. That
+shapes how it may be changed:
 
 - Keep changes to `cpp/core/` minimal and semantic only where required. Input checks,
   threading policy and error reporting belong in `cpp/capi.cpp`, which is the only caller

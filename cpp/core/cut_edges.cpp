@@ -1,9 +1,12 @@
+// Stage IV of knndbscan() (Algorithm 4, lines 3-5): each cut edge's endpoints are
+// replaced by the global ids of their subtrees, asking the rank that owns the far
+// endpoint. Part of the unity build of knndbscan.cpp.
 #include "globals.h"
 using namespace std;
 
-void update_cutedges(point_int n0, point_int ISTART, const vector<point_int> R,
-                     const map<point_int, int> label, const point_int* JA,
-                     const float* A, vector<edge_int>& crossE) {
+void update_cut_edges(point_int n0, point_int ISTART, const vector<point_int> R,
+                      const map<point_int, int> label, const point_int* JA,
+                      const float* A, vector<edge_int>& crossE) {
     vector<point_int> sbuf, rbuf, ordering;
     int* scounts = new int[gsize];
     int* sdispls = new int[gsize];

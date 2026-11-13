@@ -1,10 +1,29 @@
+// Stage II of knndbscan() (Algorithm 2): Boruvka over the core points of one rank,
+// through its local edges only, threaded with OpenMP. Edges to other ranks are
+// collected as cut edges for stage IV. Part of the unity build of knndbscan.cpp.
+#include "cycles.h"
 #include "globals.h"
-#include "mst_omp.cpp"
+#include "log.h"
+#include "min_edges.h"
 using namespace std;
 
-int localmst_omp(const point_int N, const point_int ISTART, const point_int* JA,
-                 const float* A, vector<point_int>& R, vector<point_int>& C,
-                 const vector<point_int> core, vector<edge_int>& crossE) {
+// Points every subtree left in a cycle of minimum edges (with the subtrees leading into
+// it) at the first member of its group, which becomes the group's root.
+inline void break_cycles(const vector<Cycle> cycles, vector<Edge>& minE) {
+    vector<int> from(cycles.size()), to(cycles.size());
+    for (size_t l = 0; l < cycles.size(); l++) {
+        from[l] = cycles[l].i;
+        to[l] = cycles[l].j;
+    }
+    const vector<int> roots = first_member_of_group(from, to);
+    for (size_t l = 0; l < cycles.size(); l++) minE[from[l]].j = roots[l];
+    KNN_DEBUG_EVERY_RANK("local MST: joined %zu subtree(s) caught in cycles",
+                         cycles.size());
+}
+
+int local_mst(const point_int N, const point_int ISTART, const point_int* JA,
+              const float* A, vector<point_int>& R, vector<point_int>& C,
+              const vector<point_int> core, vector<edge_int>& crossE) {
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     // note that for multi process, N represents total # points of the local process
