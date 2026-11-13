@@ -2,7 +2,10 @@
 // kNN-graph text file, and rank 0 writes one label per line.
 #include <getopt.h>
 
+#include <cstring>
+
 #include "clusters.h"
+#include "log.h"
 
 using namespace std;
 
@@ -28,6 +31,14 @@ void prepare_read(const int gsize, const int rank, const point_int N, point_int&
     }
 }
 
+// "off", "info", "debug" or 0-2; -1 for anything else.
+static int parse_log_level(const char* text) {
+    if (!strcmp(text, "off") || !strcmp(text, "0")) return knnlog::off;
+    if (!strcmp(text, "info") || !strcmp(text, "1")) return knnlog::info;
+    if (!strcmp(text, "debug") || !strcmp(text, "2")) return knnlog::debug;
+    return -1;
+}
+
 static void show_usage(char* argv0) {
     const char* params =
         "Usage: %s [switches] -n num_points -e epsilon -m minPts -i knngraph_name -k "
@@ -41,7 +52,9 @@ static void show_usage(char* argv0) {
         "should be no less than m\n"
         "   -o output      : output file with label for each point, the order of "
         "points is as the same with knn graph\n"
-        "   -t threads  : number of threads per MPI task\n\n";
+        "   -t threads  : number of threads per MPI task\n"
+        "   -l level    : log level on standard error: off, info or debug (default:\n"
+        "                 $KNNDBSCAN_LOG_LEVEL, else info)\n\n";
 
     fprintf(stderr, params, argv0);
     exit(-1);
@@ -63,8 +76,10 @@ int main(int argc, char** argv) {
     int nthreads = -1;
     char* knn_file = NULL;
     char* label_file = NULL;
+    const char* log_setting = getenv("KNNDBSCAN_LOG_LEVEL");
+    int log_level = log_setting ? parse_log_level(log_setting) : knnlog::info;
 
-    while ((opt = getopt(argc, argv, "n:e:m:i:k:o:t:d:p:v:z:bxghncul")) != EOF) {
+    while ((opt = getopt(argc, argv, "n:e:m:i:k:o:t:l:")) != EOF) {
         switch (opt) {
             case 'n':
                 N = atoi(optarg);
@@ -87,6 +102,9 @@ int main(int argc, char** argv) {
             case 't':
                 nthreads = atoi(optarg);
                 break;
+            case 'l':
+                log_level = parse_log_level(optarg);
+                break;
             case '?':
                 show_usage(argv[0]);
                 break;
@@ -95,7 +113,8 @@ int main(int argc, char** argv) {
                 break;
         }
     }
-    if (N < 0 || eps < 1.e-6 || minPts < 0 || nthreads < 1 || knn_file == NULL) {
+    if (N < 0 || eps < 1.e-6 || minPts < 0 || nthreads < 1 || knn_file == NULL ||
+        log_level < 0) {
         show_usage(argv[0]);
         exit(-1);
     }
@@ -109,14 +128,12 @@ int main(int argc, char** argv) {
         nthreads = omp_get_num_threads();
     }
 
-    if (rank == 0) {
-        cout << "number of process: " << gsize << endl;
-        cout << "threads per MPI task: " << nthreads << endl;
-        cout << "total number of points: " << N << endl;
-        cout << "number of neighbors in knn graph: " << graph_k << endl;
-        cout << "input clustering parameters: eps=" << eps << " ,minPts=" << minPts
-             << endl;
-    }
+    knnlog::level = log_level;
+    knnlog::rank = rank;
+    knnlog::n_ranks = gsize;
+    KNN_INFO("reading %s: %d points, %d neighbor column(s) per line", knn_file, N,
+             graph_k);
+    const double t_start = MPI_Wtime();
 
     // ---------- read kNN graph ------------------
     point_int n, rstart, rend;
@@ -149,12 +166,11 @@ int main(int argc, char** argv) {
 
     fin.close();
     MPI_Barrier(MPI_COMM_WORLD);
-    if (rank == 0) cout << "finish kNN-G read." << endl;
+    KNN_INFO("read the kNN graph in %.3e s", MPI_Wtime() - t_start);
 
     // ---------- knn-dbscan clustering ------------------
     vector<point_int> R;
-    R = knndbscan(N, eps, minPts, k, JA, A, true);
-    if (rank == 0) cout << "finish knn dbscan." << endl;
+    R = knndbscan(N, eps, minPts, k, JA, A);
 
     // ---------- output labels ------------------
     int* rcounts = new int[gsize];
@@ -178,7 +194,7 @@ int main(int argc, char** argv) {
         fout.close();
     }
 
-    if (rank == 0) cout << "finish label write." << endl;
+    KNN_INFO("wrote %s; %.3e s in total", label_file, MPI_Wtime() - t_start);
     MPI_Finalize();
     return 0;
 }

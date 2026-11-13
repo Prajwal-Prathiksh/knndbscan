@@ -115,6 +115,12 @@ Names (use them in code, docstrings, messages and docs):
 
 ## Code changes
 
+- C++ never prints. Report through `cpp/core/log.h`: `KNN_INFO` (rank 0; one line per
+  phase), `KNN_DEBUG` (rank 0; per Boruvka step) or `KNN_DEBUG_EVERY_RANK` (per-rank
+  state). Never log inside a per-point or per-edge loop, or from an OpenMP parallel
+  region, and compute debug-only statistics under `if (knnlog::enabled(knnlog::debug))`.
+  Python code logs with `logging.getLogger(__name__)`; C messages arrive on
+  `knndbscan.core`.
 - Before adding a helper, search for an existing one and reuse or extend it. Do not add
   small single-use functions, and do not duplicate logic a module already owns. Graph
   validation lives in `cpp/capi.cpp`; `_native.py` checks only what ctypes needs before

@@ -1,5 +1,6 @@
 #include "cycles.h"
 #include "globals.h"
+#include "log.h"
 using namespace std;
 
 inline int find_parent(const int i) {
@@ -221,6 +222,7 @@ inline int countall(const int n) {
 // pointer) at the first member of its group, which becomes the group's root.
 void count_cycles(const vector<int> I, vector<int>& J) {
     J = first_member_of_group(I, J);
+    KNN_DEBUG("cut MST: joined %zu subtree(s) caught in cycles", I.size());
 }
 
 void break_cycles_global(const vector<int> pre_check, vector<int>& roots) {
@@ -650,7 +652,7 @@ inline void count_points(const int rank, const point_int N, point_int& n0, point
 }
 
 vector<int> cutmst(const int n_ALLtrees, int& n_local, vector<edge_int>& crossE,
-                   const float* A, bool verbose = false) {
+                   const float* A) {
     // n_ALLtrees: total number of subtrees over all processes
     // n_local: # of subtress in local process
 
@@ -689,7 +691,6 @@ vector<int> cutmst(const int n_ALLtrees, int& n_local, vector<edge_int>& crossE,
     int istep = 0;
     float w;
     // Boruvka's iterations:
-    if (rank == 0 && verbose) cout << "input subtree #:" << n_ALLtrees << endl;
     while (dn_tree > 0) {
         // step 1: initialization
         best.clear();  // \forall i\ in C_local
@@ -728,9 +729,16 @@ vector<int> cutmst(const int n_ALLtrees, int& n_local, vector<edge_int>& crossE,
         int dn_tree_local = n_tree_old - n_tree;
         dn_tree = countall(dn_tree_local);
         n_local = C.size();
+        KNN_DEBUG("cut MST step %d: %d -> %d subtree(s)", istep, n_tree_old, n_tree);
+        if (knnlog::enabled(knnlog::debug)) {
+            int active = 0;
+            for (int l = 0; l < nE; l++) active += (crossE[l] >= 0);
+            KNN_DEBUG_EVERY_RANK("cut MST step %d: %d active cut edge(s)", istep,
+                                 active);
+        }
         istep += 1;
     }
-    if (rank == 0 && verbose) cout << "number of clusters: " << n_tree << endl;
+    KNN_INFO("cut MST: %d cluster(s) after %d Boruvka step(s)", n_tree, istep);
 
     // relabel
     relabel(C_local, roots);

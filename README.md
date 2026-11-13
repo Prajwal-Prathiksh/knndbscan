@@ -72,6 +72,24 @@ labels = knn_dbscan_from_graph(neighbors, distances, eps=0.05, min_samples=15)
 
 `examples/compare_with_dbscan.py` runs both algorithms side by side.
 
+## Logging
+
+knndbscan reports progress through Python's standard `logging`, on the `knndbscan`
+logger: the neighbor search (`knndbscan.neighbors`) and each phase of the C++ core
+(`knndbscan.core`: core points, subtrees, clusters, timings) at INFO, and every Borůvka
+step at DEBUG. It is silent until you enable it:
+
+```python
+import logging
+
+logging.basicConfig(level=logging.INFO)                  # everything, INFO and up
+logging.getLogger("knndbscan").setLevel(logging.DEBUG)   # or only knndbscan, in detail
+```
+
+The level is read on every call, and disabled messages are never formatted, so logging
+costs nothing when off. The command-line program logs the same messages (`-l` below),
+prefixed with the MPI rank.
+
 ## Command-line program (MPI)
 
 For graphs too large for one machine, the command-line program splits the rows across MPI
@@ -91,6 +109,7 @@ mpiexec -n 4 build/cli/knndbscan -n 70000 -e 1300.0 -m 100 -k 100 -t 4 \
 | `-k` | neighbors per line of the input file, including the point itself (at least `-m`) |
 | `-t` | OpenMP threads per rank |
 | `-i`, `-o` | input graph file, output labels file (one label per line) |
+| `-l` | log level on standard error: `off`, `info` (default) or `debug`; also `$KNNDBSCAN_LOG_LEVEL` |
 
 Each input line is `point_id distance_1 neighbor_1 distance_2 neighbor_2 ...`, sorted by
 distance and **including the point itself** at distance 0, for example `7 0.0 7 1.0 10 2.0 11`.

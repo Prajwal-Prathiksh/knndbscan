@@ -2,9 +2,13 @@
 
 The library links neither Python nor NumPy, which is what lets one wheel per platform
 serve every Python 3 version. ctypes releases the GIL for the duration of each call.
+
+The library's log messages go to the `knndbscan.core` logger. Each call passes that
+logger's effective level to C, so with logging off nothing is formatted.
 """
 
 import ctypes
+import logging
 import os
 import sys
 from pathlib import Path
@@ -15,6 +19,9 @@ import numpy.typing as npt
 _LIBRARY_FILES = {"darwin": "libknndbscan.dylib", "win32": "knndbscan.dll"}
 _ERROR_INVALID_ARGUMENT = 1
 _INT32 = np.iinfo(np.int32)
+_LOG_OFF, _LOG_INFO, _LOG_DEBUG = 0, 1, 2
+_LOG_HANDLER = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p)
+logger = logging.getLogger("knndbscan.core")
 
 
 def _load_library() -> ctypes.CDLL:
@@ -52,10 +59,26 @@ def _load_library() -> ctypes.CDLL:
     library.knndbscan_cluster.restype = ctypes.c_int
     library.knndbscan_last_error.argtypes = []
     library.knndbscan_last_error.restype = ctypes.c_char_p
+    library.knndbscan_set_log_handler.argtypes = [_LOG_HANDLER, ctypes.c_void_p]
+    library.knndbscan_set_log_handler.restype = None
     return library
 
 
+@_LOG_HANDLER
+def _forward_log(level: int, message: bytes, _user_data: int | None) -> None:
+    """Receive a C log message; ctypes takes the GIL for the call."""
+    logger.log(logging.DEBUG if level == _LOG_DEBUG else logging.INFO, message.decode())
+
+
+def _log_level() -> int:
+    if logger.isEnabledFor(logging.DEBUG):
+        return _LOG_DEBUG
+    return _LOG_INFO if logger.isEnabledFor(logging.INFO) else _LOG_OFF
+
+
 _library = _load_library()
+# The library keeps the function pointer, so _forward_log must live as long as the module.
+_library.knndbscan_set_log_handler(_forward_log, None)
 
 
 def _as_int32_indices(neighbors: npt.ArrayLike) -> npt.NDArray[np.int32]:
@@ -78,7 +101,6 @@ def cluster_graph(
     eps: float,
     min_samples: int,
     n_threads: int,
-    verbose: bool,
 ) -> npt.NDArray[np.int32]:
     """Convert the graph to the C layout and run knndbscan_cluster on it.
 
@@ -105,7 +127,7 @@ def cluster_graph(
         eps,
         min_samples,
         n_threads,
-        int(verbose),
+        _log_level(),
         labels,
     )
     if status != 0:

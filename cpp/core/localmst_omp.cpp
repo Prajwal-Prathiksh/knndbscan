@@ -125,6 +125,8 @@ int localmst_omp(const point_int N, const point_int ISTART, const point_int* JA,
         dn_tree = n_tree_old - n_tree;
         isteps.push_back(istep);
         n_trees.push_back(n_tree);
+        KNN_DEBUG_EVERY_RANK("local MST step %d: %d -> %d subtree(s)", istep,
+                             n_tree_old, n_tree);
         istep += 1;
     }
     return n_tree;

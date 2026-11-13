@@ -1,4 +1,9 @@
-"""Public clustering API: functions for data and for precomputed graphs, and a scikit-learn estimator."""
+"""Public clustering API: functions for data and for precomputed graphs, and a scikit-learn estimator.
+
+Progress is reported through the standard `logging` module, on the `knndbscan` logger
+and its children (`knndbscan.core` for the C++ core): INFO for each phase, DEBUG for
+every Boruvka step. Enable it with, for example, ``logging.basicConfig(level=logging.INFO)``.
+"""
 
 import os
 from typing import Any
@@ -37,7 +42,6 @@ def knn_dbscan_from_graph(
     min_samples: int,
     *,
     n_jobs: int | None = None,
-    verbose: bool = False,
 ) -> npt.NDArray[np.int32]:
     """Cluster a precomputed kNN graph with kNN-DBSCAN.
 
@@ -60,8 +64,6 @@ def knn_dbscan_from_graph(
             within ``eps`` for it to be a core point. Between 2 and ``n_neighbors + 1``.
         n_jobs: OpenMP threads. ``None`` means 1, ``-1`` every CPU available to the
             process, ``-2`` all but one, and so on.
-        verbose: Print the phase timings of the C++ core to the process's standard
-            output (not to ``sys.stdout``, so notebooks do not show it).
 
     Returns:
         Labels of shape ``(n_points,)``, int32: ``0..n_clusters-1`` for points in
@@ -81,7 +83,7 @@ def knn_dbscan_from_graph(
         >>> labels = knn_dbscan_from_graph(neighbors, distances, eps=0.5, min_samples=10)
     """
     return cluster_graph(
-        neighbors, distances, eps, min_samples, _resolve_n_jobs(n_jobs), verbose
+        neighbors, distances, eps, min_samples, _resolve_n_jobs(n_jobs)
     )
 
 
@@ -92,7 +94,6 @@ def knn_dbscan(
     *,
     n_jobs: int | None = None,
     device: Device = "auto",
-    verbose: bool = False,
 ) -> npt.NDArray[np.int32]:
     """Cluster data points with kNN-DBSCAN over their exact Euclidean kNN graph.
 
@@ -114,8 +115,6 @@ def knn_dbscan(
         device: Where to search for neighbors: ``"cpu"`` (scikit-learn), ``"gpu"``
             (cuML; needs the ``gpu`` extra and a CUDA device), or ``"auto"`` (the GPU
             when usable, else the CPU). Clustering always runs on the CPU.
-        verbose: Print the phase timings of the C++ core to the process's standard
-            output.
 
     Returns:
         Labels of shape ``(n_samples,)``, int32: ``0..n_clusters-1`` for points in
@@ -133,7 +132,7 @@ def knn_dbscan(
         >>> X, _ = make_blobs(n_samples=1000, centers=3, random_state=0)
         >>> labels = knn_dbscan(X, eps=0.5, min_samples=10, device="cpu")
     """
-    model = KNNDBSCAN(eps, min_samples, n_jobs=n_jobs, device=device, verbose=verbose)
+    model = KNNDBSCAN(eps, min_samples, n_jobs=n_jobs, device=device)
     return model.fit(X).labels_
 
 
@@ -150,7 +149,6 @@ class KNNDBSCAN(ClusterMixin, BaseEstimator):  # type: ignore[misc]
         n_jobs: Threads for the neighbor search and clustering; ``None`` means 1,
             ``-1`` every CPU available to the process.
         device: ``"cpu"``, ``"gpu"`` or ``"auto"``; where to search for neighbors.
-        verbose: Print the phase timings of the C++ core to standard output.
 
     Attributes:
         labels_: Labels of the fitted data, int32: ``0..n_clusters-1``, ``-1`` for noise.
@@ -167,13 +165,11 @@ class KNNDBSCAN(ClusterMixin, BaseEstimator):  # type: ignore[misc]
         *,
         n_jobs: int | None = None,
         device: Device = "auto",
-        verbose: bool = False,
     ) -> None:
         self.eps = eps
         self.min_samples = min_samples
         self.n_jobs = n_jobs
         self.device = device
-        self.verbose = verbose
 
     def fit(self, X: Any, y: None = None) -> "KNNDBSCAN":
         """Cluster ``X`` and store ``labels_`` and ``core_sample_indices_``.
@@ -202,7 +198,7 @@ class KNNDBSCAN(ClusterMixin, BaseEstimator):  # type: ignore[misc]
             X, self.min_samples - 1, device=self.device, n_jobs=n_jobs
         )
         self.labels_ = cluster_graph(
-            neighbors, distances, self.eps, self.min_samples, n_jobs, self.verbose
+            neighbors, distances, self.eps, self.min_samples, n_jobs
         )
         # The same float32 comparison as the C++ core, so the two agree at eps exactly.
         is_core = distances[:, self.min_samples - 2] <= np.float32(self.eps)

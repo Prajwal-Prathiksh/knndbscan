@@ -5,9 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <exception>
-#include <iostream>
 #include <limits>
 #include <mutex>
 #include <string>
@@ -15,8 +13,12 @@
 
 #include "clusters.h"
 #include "knndbscan.h"
+#include "log.h"
 
 static_assert(sizeof(point_int) == sizeof(int32_t), "the C API passes labels as int32");
+static_assert(KNNDBSCAN_LOG_OFF == knnlog::off && KNNDBSCAN_LOG_INFO == knnlog::info &&
+                  KNNDBSCAN_LOG_DEBUG == knnlog::debug,
+              "the C API passes knnlog levels");
 
 namespace {
 
@@ -50,7 +52,7 @@ const char* row_problem(int64_t i, int32_t n_points, int32_t n_neighbors,
 
 int check_arguments(const int32_t* neighbors, const float* distances, int32_t n_points,
                     int32_t n_neighbors, float eps, int32_t min_samples,
-                    int32_t n_threads, const int32_t* labels) {
+                    int32_t n_threads, int32_t log_level, const int32_t* labels) {
     const int code = KNNDBSCAN_ERROR_INVALID_ARGUMENT;
     if (!neighbors || !distances || !labels) return fail(code, "null array pointer");
     if (n_points < 1) return fail(code, "n_points must be at least 1");
@@ -65,6 +67,8 @@ int check_arguments(const int32_t* neighbors, const float* distances, int32_t n_
     if (!std::isfinite(eps) || eps <= 0.0f)
         return fail(code, "eps must be positive and finite");
     if (n_threads < 1) return fail(code, "n_threads must be at least 1");
+    if (log_level < KNNDBSCAN_LOG_OFF || log_level > KNNDBSCAN_LOG_DEBUG)
+        return fail(code, "log_level must be a KNNDBSCAN_LOG_* value");
 
     int64_t first_bad = n_points;
 #pragma omp parallel for num_threads(n_threads) reduction(min : first_bad)
@@ -104,10 +108,10 @@ void renumber_by_first_point(const std::vector<point_int>& core_labels,
 extern "C" int knndbscan_cluster(const int32_t* neighbors, const float* distances,
                                  int32_t n_points, int32_t n_neighbors, float eps,
                                  int32_t min_samples, int32_t n_threads,
-                                 int32_t verbose, int32_t* labels) {
+                                 int32_t log_level, int32_t* labels) {
     last_error.clear();
     int status = check_arguments(neighbors, distances, n_points, n_neighbors, eps,
-                                 min_samples, n_threads, labels);
+                                 min_samples, n_threads, log_level, labels);
     if (status != KNNDBSCAN_OK) return status;
 
     std::lock_guard<std::mutex> lock(call_mutex);
@@ -117,26 +121,27 @@ extern "C" int knndbscan_cluster(const int32_t* neighbors, const float* distance
     const int previous_dynamic = omp_get_dynamic();
     omp_set_dynamic(0);
     omp_set_num_threads(n_threads);
+    knnlog::level = log_level;
     try {
         std::vector<point_int> result =
-            knndbscan(n_points, eps, min_samples, n_neighbors, neighbors, distances,
-                      verbose != 0);
+            knndbscan(n_points, eps, min_samples, n_neighbors, neighbors, distances);
         renumber_by_first_point(result, labels);
     } catch (const std::exception& error) {
         status = fail(KNNDBSCAN_ERROR_INTERNAL, error.what());
     } catch (...) {
         status = fail(KNNDBSCAN_ERROR_INTERNAL, "unknown error in the clustering core");
     }
+    knnlog::level = knnlog::off;
     omp_set_num_threads(previous_threads);
     omp_set_dynamic(previous_dynamic);
-    // The core reports with both printf and cout; flushing both makes the report appear
-    // before the call returns, not whenever the C buffer happens to fill or the process
-    // exits.
-    if (verbose) {
-        std::cout.flush();
-        std::fflush(stdout);
-    }
     return status;
+}
+
+extern "C" void knndbscan_set_log_handler(knndbscan_log_handler handler,
+                                          void* user_data) {
+    std::lock_guard<std::mutex> lock(call_mutex);
+    knnlog::handler = handler;
+    knnlog::handler_data = user_data;
 }
 
 extern "C" const char* knndbscan_last_error(void) { return last_error.c_str(); }

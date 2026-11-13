@@ -135,3 +135,30 @@ def test_runs_repeat_identically_across_threads(tmp_path: Path) -> None:
     for labels in runs[1:]:
         np.testing.assert_array_equal(labels == -1, runs[0] == -1)
         assert same_partition(labels, runs[0])
+
+
+@pytest.mark.parametrize("level", ["off", "info", "debug"])
+def test_log_level_selects_what_reaches_standard_error(
+    tmp_path: Path, level: str
+) -> None:
+    neighbors, distances = _blobs_graph("shuffled")
+    _write_graph(tmp_path / "graph.txt", neighbors, distances)
+    run = subprocess.run(
+        [MPIEXEC, "-n", "2", CLI, "-n", str(len(neighbors)), "-e", "0.4", "-m", "8",
+         "-k", "13", "-t", "1", "-l", level,
+         "-i", str(tmp_path / "graph.txt"), "-o", str(tmp_path / "labels.txt")],
+        capture_output=True, text=True, timeout=60,
+    )  # fmt: skip
+    assert run.returncode == 0, run.stderr
+    assert run.stdout == ""
+    lines = run.stderr.splitlines()
+    if level == "off":
+        assert lines == []
+    else:
+        assert any(
+            line.startswith("[knndbscan info] rank 0/2: cut MST:") for line in lines
+        )
+        has_debug = any(
+            line.startswith("[knndbscan debug] rank 1/2:") for line in lines
+        )
+        assert has_debug == (level == "debug")

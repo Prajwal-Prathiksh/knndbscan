@@ -72,6 +72,12 @@ static void test_rejected_calls_leave_labels_untouched(void) {
     expect_rejected(pair_neighbors, negative, 4, 1, 1.0f, 2, 1, "negative");
     expect_rejected(triangle, unsorted, 3, 2, 1.0f, 2, 1, "row 1: distances are not");
     expect_rejected(pair_neighbors, pair_distances, 65536, 32768, 1.0f, 2, 1, "2^31");
+
+    int32_t labels[4] = {7, 7, 7, 7};
+    CHECK(knndbscan_cluster(pair_neighbors, pair_distances, 4, 1, 1.0f, 2, 1, 3,
+                            labels) == KNNDBSCAN_ERROR_INVALID_ARGUMENT);
+    CHECK(strstr(knndbscan_last_error(), "log_level") != NULL &&
+          all_equal(labels, 4, 7));
 }
 
 static void* fail_in_another_thread(void* message_out) {
@@ -179,6 +185,29 @@ static void test_concurrent_calls_give_the_serial_result(void) {
     }
 }
 
+static void count_messages(int level, const char* message, void* counts) {
+    (void)message;
+    ((int*)counts)[level]++;
+}
+
+static void test_log_handler_receives_only_enabled_levels(void) {
+    int32_t labels[N_POINTS];
+    int counts[3] = {0, 0, 0};
+    knndbscan_set_log_handler(count_messages, counts);
+    knndbscan_cluster(graph_neighbors, graph_distances, N_POINTS, N_NEIGHBORS, 0.75f,
+                      MIN_SAMPLES, 2, KNNDBSCAN_LOG_OFF, labels);
+    CHECK(counts[KNNDBSCAN_LOG_INFO] == 0 && counts[KNNDBSCAN_LOG_DEBUG] == 0);
+    knndbscan_cluster(graph_neighbors, graph_distances, N_POINTS, N_NEIGHBORS, 0.75f,
+                      MIN_SAMPLES, 2, KNNDBSCAN_LOG_INFO, labels);
+    CHECK(counts[KNNDBSCAN_LOG_INFO] > 0 && counts[KNNDBSCAN_LOG_DEBUG] == 0);
+    knndbscan_cluster(graph_neighbors, graph_distances, N_POINTS, N_NEIGHBORS, 0.75f,
+                      MIN_SAMPLES, 2, KNNDBSCAN_LOG_DEBUG, labels);
+    CHECK(counts[KNNDBSCAN_LOG_DEBUG] > 0);
+    knndbscan_set_log_handler(NULL, NULL);
+    /* Logging must not change the result. */
+    CHECK(memcmp(labels, graph_labels, sizeof(labels)) == 0);
+}
+
 int main(void) {
     make_random_graph();
     test_valid_call_writes_labels_and_clears_the_error();
@@ -187,6 +216,7 @@ int main(void) {
     test_openmp_settings_are_restored();
     test_labels_do_not_depend_on_thread_count();
     test_concurrent_calls_give_the_serial_result();
+    test_log_handler_receives_only_enabled_levels();
     if (failures) fprintf(stderr, "%d check(s) failed\n", failures);
     return failures != 0;
 }

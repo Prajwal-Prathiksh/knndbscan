@@ -4,6 +4,8 @@ Graphs follow the package convention: rows sorted by distance, the point itself 
 returned as host NumPy arrays because the clustering library runs on the CPU.
 """
 
+import logging
+import time
 from typing import Any, Literal
 
 import numpy as np
@@ -11,6 +13,7 @@ import numpy.typing as npt
 from sklearn.neighbors import NearestNeighbors
 
 Device = Literal["auto", "cpu", "gpu"]
+logger = logging.getLogger(__name__)
 
 
 def gpu_available() -> bool:
@@ -70,7 +73,9 @@ def knn_graph(
     `n_jobs` applies to the CPU search only. A CuPy input stays on the GPU for a GPU
     search and is copied to the host for a CPU one.
     """
-    if resolve_device(device) == "gpu":
+    start = time.perf_counter()
+    resolved = resolve_device(device)
+    if resolved == "gpu":
         import cupy
         from cuml.neighbors import NearestNeighbors as CumlNearestNeighbors
 
@@ -87,4 +92,11 @@ def knn_graph(
         # a point stay in its row.
         model = NearestNeighbors(n_neighbors=n_neighbors, n_jobs=n_jobs).fit(X)
         distances, indices = model.kneighbors()
+    logger.info(
+        "kNN graph: %d points x %d neighbors on the %s in %.3e s",
+        len(indices),
+        n_neighbors,
+        resolved.upper(),
+        time.perf_counter() - start,
+    )
     return np.asarray(indices, dtype=np.int64), np.asarray(distances, dtype=np.float32)

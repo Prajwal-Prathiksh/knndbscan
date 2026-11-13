@@ -1,11 +1,10 @@
 #include "cycles.h"
 #include "globals.h"
+#include "log.h"
 using namespace std;
 
-// parallel mst on shared memory model:
-// function "mst_omp"
-// NOTE: this function is different than the local mst construction.
-
+// Helpers of the local Boruvka step (localmst_omp.cpp): lock-free minimum-edge updates
+// and cycle breaking.
 inline bool cas(Edge& e_old, const float w_old, const point_int j_new,
                 const float w_new) {
     if (e_old.w == w_old) {
@@ -26,16 +25,6 @@ inline void pwrite(Edge& e_old, const point_int j_new, const float w_new) {
     // the second condition determines if the swap is successed.
 }
 
-inline void pointer_jumping(const point_int i, Edge& e1, const point_int j,
-                            vector<point_int>& cycleFlags, point_int& count) {
-    if (e1.j != j) {
-        e1.j = j;
-    } else if (cycleFlags[i] >= 0) {
-        cycleFlags[i] = -1;
-        count += 1;
-    }
-}
-
 // Points every subtree left in a cycle of minimum edges (with the subtrees leading into
 // it) at the first member of its group, which becomes the group's root.
 inline void break_cycles(const vector<Cycle> cycles, vector<Edge>& minE) {
@@ -46,198 +35,6 @@ inline void break_cycles(const vector<Cycle> cycles, vector<Edge>& minE) {
     }
     const vector<int> roots = first_member_of_group(from, to);
     for (size_t l = 0; l < cycles.size(); l++) minE[from[l]].j = roots[l];
-}
-
-vector<point_int> mst_omp(const point_int N, const edge_int* IA, const point_int* JA,
-                          const float* A) {
-    point_int n_tree = N;
-    point_int dn_tree = 1;
-
-    vector<point_int> R(N), checked(N), cycleFlags(N);
-    vector<Edge> minE(N);
-    vector<point_int> C;
-    vector<Cycle> cycles;
-
-    point_int count;
-    vector<point_int> counts(num_threads);
-    int istep = 0;
-    point_int n_tree_old;
-
-    cout << "   step  " << "|| n_tree " << "||  -I-   ||" << "   -II-  ||"
-         << "  -III-  ||"
-         << "  -IV-   ||" << "   -V-   ||" << "   -VI-  ||" << endl;
-    vector<double> phase_time(7), dt(7);
-    double t0, t1, t2, t3, t4, t5, t6;
-
-    while (dn_tree > 0) {
-        // phase-I: initialization
-        t0 = omp_get_wtime();
-        if (istep != 0) {
-#pragma omp parallel for
-            for (point_int c = 0; c < n_tree; c++) {
-                point_int i = C[c];
-                minE[i] = {-1, sentinel};
-            }
-        } else {
-#pragma omp parallel for simd
-            for (point_int p = 0; p < N; p++) {
-                R[p] = p;
-                cycleFlags[p] = p;
-                minE[p] = {-1, sentinel};
-            }
-        }
-        t1 = omp_get_wtime();
-        dt[1] = t1 - t0;
-
-        // phase-II: find min_edges
-        //        #pragma code_align 64
-#pragma omp parallel for
-        for (point_int p = 0; p < N; p++) {
-            edge_int m = IA[p] + checked[p];
-            while (m < IA[p + 1]) {
-                point_int q = JA[m];
-                if (R[p] != R[q]) break;
-                checked[p] += 1;
-                m += 1;
-            }
-        }
-#pragma omp parallel for simd
-        for (point_int p = 0; p < N; p++) {
-            edge_int m = IA[p] + checked[p];
-            if (m < IA[p + 1]) {
-                point_int q = JA[m];
-                pwrite(minE[R[p]], R[q], A[m]);
-            }
-        }
-
-        t2 = omp_get_wtime();
-        dt[2] = t2 - t1;
-
-        // phase-III: break symmetry
-        if (istep == 0) {
-#pragma omp parallel for
-            for (point_int p = 0; p < N; p++) {
-                point_int j = minE[p].j;
-                if (j == -1) {
-                    minE[p].j == p;
-                } else {
-                    point_int k = minE[j].j;
-                    if ((p == k) and (p < j)) {
-                        minE[p].j = p;
-                    }
-                }
-            }
-        } else {
-#pragma omp parallel for
-            for (point_int c = 0; c < n_tree; c++) {
-                point_int i = C[c];
-                point_int j = minE[i].j;
-                if (j == -1) {
-                    minE[i].j = i;
-                } else {
-                    point_int k = minE[j].j;
-                    if ((i == k) and (i < j)) {
-                        minE[i].j = i;
-                    }
-                }
-            }
-        }
-        t3 = omp_get_wtime();
-        dt[3] = t3 - t2;
-
-        // phase-IV: pointer jumping
-        if (istep != 0) {
-#pragma omp parallel for
-            for (point_int c = 0; c < n_tree; c++) {
-                point_int i = C[c];
-                cycleFlags[i] = minE[i].j;
-            }
-        }
-        count = 1;
-        while (count > 0) {
-            count = 0;
-            if (istep == 0) {
-#pragma omp parallel for
-                for (point_int p = 0; p < N; p++) {
-                    point_int j = minE[minE[p].j].j;
-                    pointer_jumping(p, minE[p], j, cycleFlags,
-                                    counts[omp_get_thread_num()]);
-                }
-            } else {
-#pragma omp parallel for
-                for (point_int c = 0; c < n_tree; c++) {
-                    point_int i = C[c];
-                    point_int j = minE[i].j;
-                    point_int k = minE[j].j;
-                    if (j != k) {
-                        minE[i].j = k;
-                    } else if (cycleFlags[i] >= 0) {
-                        cycleFlags[i] = -1;
-                        counts[omp_get_thread_num()] += 1;
-                    }
-                }
-            }
-            for (int t = 0; t < num_threads; t++) count += counts[t];
-            fill(counts.begin(), counts.end(), 0);
-        }
-        t4 = omp_get_wtime();
-        dt[4] = t4 - t3;
-
-        // phase-V: break cycles
-        cycles.resize(0);
-        if (istep == 0) {
-#pragma omp parallel for reduction(merge_Cycle : cycles)
-            for (point_int p = 0; p < N; p++) {
-                if (cycleFlags[p] != -1) {
-                    cycles.push_back({p, cycleFlags[p]});
-                }
-            }
-
-        } else {
-#pragma omp parallel for reduction(merge_Cycle : cycles)
-            for (point_int c = 0; c < n_tree; c++) {
-                point_int i = C[c];
-                if (cycleFlags[i] != -1) {
-                    cycles.push_back({i, cycleFlags[i]});
-                }
-            }
-        }
-        if (cycles.size() > 0) {
-            break_cycles(cycles, minE);
-        }
-        t5 = omp_get_wtime();
-        dt[5] = t5 - t4;
-
-        // phase-VI: update roots R, number of trees and clusters
-        n_tree_old = n_tree;
-        n_tree = 0;
-        C.resize(0);
-#pragma omp parallel for reduction(merge_pointint : C)
-        for (point_int p = 0; p < N; p++) {
-            point_int new_root = minE[R[p]].j;
-            R[p] = new_root;
-            if (new_root == p) {
-                C.push_back(p);
-            }
-        }
-        t6 = omp_get_wtime();
-        dt[6] = t6 - t5;
-
-        // check:
-        n_tree = C.size();
-        dn_tree = n_tree_old - n_tree;
-
-        for (int c = 1; c < 7; c++) phase_time[c] += dt[c];
-        printf("step  %2d :(%8d)   %.2E   %.2E   %.2E   %.2E   %.2E   %.2E\n", istep,
-               n_tree_old, dt[1], dt[2], dt[3], dt[4], dt[5], dt[6]);
-        istep += 1;
-    }
-
-    printf("total %2d :(%8d)   %.2E   %.2E   %.2E   %.2E   %.2E   %.2E\n", istep - 1,
-           n_tree, phase_time[1], phase_time[2], phase_time[3], phase_time[4],
-           phase_time[5], phase_time[6]);
-    double total_time = 0.;
-    for (int c = 1; c < 7; c++) total_time += phase_time[c];
-    cout << "total_time:" << total_time << endl;
-    return R;
+    KNN_DEBUG_EVERY_RANK("local MST: joined %zu subtree(s) caught in cycles",
+                         cycles.size());
 }

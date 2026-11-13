@@ -2,6 +2,7 @@
 #include "cutmst.cpp"
 #include "globals.h"
 #include "localmst_omp.cpp"
+#include "log.h"
 using namespace std;
 
 int gsize = 0;
@@ -19,7 +20,7 @@ vector<int> JJ;
 
 vector<point_int> knndbscan(const point_int N, const float eps_value,
                             const int minPts_value, const int maxk_value,
-                            const point_int* JA, const float* A, bool verbose) {
+                            const point_int* JA, const float* A) {
     // initialize basic parameters
     int rank, nprocs;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -35,6 +36,11 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
     }
     point_int n0, n, ISTART;
     count_points(rank, N, n0, n, ISTART);
+    knnlog::rank = rank;
+    knnlog::n_ranks = nprocs;
+    KNN_INFO("clustering %d points: eps=%g, min_samples=%d, %d rank(s) x %d thread(s)",
+             N, eps, minPts, gsize, num_threads);
+    KNN_DEBUG_EVERY_RANK("owns points [%d, %d)", ISTART, ISTART + n);
 
     double t0 = MPI_Wtime();
 
@@ -54,9 +60,7 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
     point_int n_core = core.size();
     int n_ALLcore = countall(n_core);
 
-    if (rank == 0 && verbose)
-        cout << "\ntotal number of core points:" << n_ALLcore << " (eps= " << eps
-             << ", minPts=" << minPts << ")" << endl;
+    KNN_INFO("core points: %d of %d", n_ALLcore, N);
 
     // II: construct local mst and select crossE: C, R, crossE
     int n_tree;
@@ -67,8 +71,7 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
     MPI_Barrier(MPI_COMM_WORLD);
     double t_local = MPI_Wtime();
 
-    if (rank == 0 && verbose)
-        printf("local mst construction time: %.3E\n", t_local - t0);
+    KNN_DEBUG_EVERY_RANK("local MST: %d subtree(s), %d cut edge(s)", n_tree, nE);
 
     // cunt cross edges #s:
     vector<int> nEs(gsize);
@@ -91,17 +94,21 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
     int n_start, n_ALLtrees;
     label_subtrees(rank, n_tree, n_trees, C, n_start, n_ALLtrees, label);
     MPI_Barrier(MPI_COMM_WORLD);
+    KNN_INFO("local MST: %d subtree(s) in %.3e s", n_ALLtrees, t_local - t0);
+    KNN_DEBUG("cut edges per rank: min %lld, max %lld, mean %.1f", (long long)min_nE,
+              (long long)max_nE, avg_nE);
 
     // IV: update cut edges
     update_cutedges(n0, ISTART, R, label, JA, A, crossE);
     MPI_Barrier(MPI_COMM_WORLD);
 
     double t_cutE = MPI_Wtime();
-    if (rank == 0 && verbose) printf("update cut edges time: %.3E\n", t_cutE - t_local);
+    KNN_INFO("cut edges: %lld, relabelled in %.3e s", (long long)total_nE,
+             t_cutE - t_local);
 
     // V: construct cut mst: R
     vector<int> roots;
-    roots = cutmst(n_ALLtrees, n_tree, crossE, A, verbose);
+    roots = cutmst(n_ALLtrees, n_tree, crossE, A);
 
     map<int, int>::iterator itr;
     point_int u;
@@ -111,8 +118,8 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
         v = itr->second;
         label[u] = roots[v - n_start];
     }
-    // u is private to each iteration, and the map is only read: a shared u let one
-    // thread label its point with another thread's root.
+    // root is private to each iteration and the map is only read: a variable shared by
+    // the threads here let one thread label its point with another thread's root.
 #pragma omp parallel for
     for (point_int p = 0; p < n; p++) {
         const point_int root = R[p];
@@ -121,19 +128,14 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
     MPI_Barrier(MPI_COMM_WORLD);
 
     double t_cutmst = MPI_Wtime();
-    if (rank == 0 && verbose)
-        printf("construct cut mst time: %.3E\n", t_cutmst - t_cutE);
+    KNN_INFO("cut MST in %.3e s", t_cutmst - t_cutE);
 
     // VI: mark border points
     label_borders(n0, n, ISTART, R, JA, A);
     MPI_Barrier(MPI_COMM_WORLD);
     double t_end = MPI_Wtime();
 
-    // summary
-    if (rank == 0 && verbose) {
-        printf("total clustering time: %.3E\n", t_end - t0);
-        printf("*** cut edges number (max, min, average) : %.3E   %.3E   %.3E\n\n",
-               (double)max_nE, (double)min_nE, avg_nE);
-    }
+    KNN_INFO("border points in %.3e s; clustering took %.3e s", t_end - t_cutmst,
+             t_end - t0);
     return R;
 }

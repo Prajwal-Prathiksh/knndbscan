@@ -4,6 +4,8 @@ Random directed graphs exercise what real data rarely does: cycles in Boruvka's
 pointer jumping, ties, tiny components and eps equal to a distance.
 """
 
+import logging
+
 import numpy as np
 import pytest
 from reference import (
@@ -108,17 +110,41 @@ def test_components_smaller_than_min_samples_are_clusters_of_their_own() -> None
     np.testing.assert_array_equal(labels, np.repeat(np.arange(10), 2))
 
 
-def test_clustering_prints_nothing_unless_verbose(
-    capfd: pytest.CaptureFixture[str],
+def test_core_logs_through_python_logging_and_never_prints(
+    capfd: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
 ) -> None:
-    # Random directed graphs make the core break cycles, whose diagnostics must not reach
-    # the process's standard output (C++ writes there, beneath Python's sys.stdout).
-    for seed in range(10):
-        rng = np.random.default_rng(10_000 + seed)
-        neighbors, distances = random_graph(rng, 400, 6)
-        knn_dbscan_from_graph(
-            neighbors, distances, eps_at_quantile(distances, 5, 0.8), 5, n_jobs=8
-        )
-    assert capfd.readouterr().out == ""
-    knn_dbscan_from_graph(neighbors, distances, 0.5, 5, verbose=True)
-    assert "total clustering time" in capfd.readouterr().out
+    # Random directed graphs make the core break cycles, so every log site runs. Nothing
+    # may reach the file descriptors (where C++ would write, beneath sys.stdout), and
+    # records appear only at the levels the "knndbscan" logger enables.
+    rng = np.random.default_rng(10_003)
+    neighbors, distances = random_graph(rng, 400, 6)
+    eps = eps_at_quantile(distances, 5, 0.8)
+
+    knn_dbscan_from_graph(neighbors, distances, eps, 5, n_jobs=8)
+    assert not [r for r in caplog.records if r.name.startswith("knndbscan")]
+
+    with caplog.at_level(logging.INFO, logger="knndbscan"):
+        knn_dbscan_from_graph(neighbors, distances, eps, 5, n_jobs=8)
+    info = [r.getMessage() for r in caplog.records if r.name == "knndbscan.core"]
+    assert any(m.startswith("core points:") for m in info)
+    assert any(m.startswith("cut MST:") for m in info)
+    assert all(r.levelno == logging.INFO for r in caplog.records)
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="knndbscan"):
+        knn_dbscan_from_graph(neighbors, distances, eps, 5, n_jobs=8)
+    debug = [r.getMessage() for r in caplog.records if r.levelno == logging.DEBUG]
+    assert any(m.startswith("local MST step") for m in debug)
+
+    out, err = capfd.readouterr()
+    assert out == "" and err == ""
+
+
+def test_neighbor_search_is_logged(caplog: pytest.LogCaptureFixture) -> None:
+    X, _ = make_blobs(200, centers=2, random_state=0)
+    with caplog.at_level(logging.INFO, logger="knndbscan"):
+        knn_dbscan(X, 0.5, 5, device="cpu")
+    assert any(
+        r.name == "knndbscan.neighbors" and "on the CPU" in r.getMessage()
+        for r in caplog.records
+    )
