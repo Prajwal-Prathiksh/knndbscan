@@ -88,7 +88,6 @@ inline void break_cycles(const vector<Cycle> cycles, vector<Edge>& minE) {
             }
         }
     }
-    cout << "number of points and cycles:" << k << " " << n_cycles << endl;
 
     // update roots
     int c;

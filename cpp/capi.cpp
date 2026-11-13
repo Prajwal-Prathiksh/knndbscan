@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <exception>
+#include <iostream>
 #include <limits>
 #include <mutex>
 #include <string>
@@ -127,6 +129,13 @@ extern "C" int knndbscan_cluster(const int32_t* neighbors, const float* distance
     }
     omp_set_num_threads(previous_threads);
     omp_set_dynamic(previous_dynamic);
+    // The core reports with both printf and cout; flushing both makes the report appear
+    // before the call returns, not whenever the C buffer happens to fill or the process
+    // exits.
+    if (verbose) {
+        std::cout.flush();
+        std::fflush(stdout);
+    }
     return status;
 }
 
