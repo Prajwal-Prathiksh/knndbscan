@@ -1,4 +1,4 @@
-#include "../include/globals.h"
+#include "globals.h"
 using namespace std;
 
 // parallel mst on shared memory model:

@@ -1,5 +1,8 @@
-#include "../include/globals.h"
-#include "../src/clusters.cpp"
+// Command-line kNN-DBSCAN on MPI ranks: each rank reads its block of rows from a
+// kNN-graph text file, and rank 0 writes one label per line.
+#include <getopt.h>
+
+#include "clusters.h"
 
 using namespace std;
 
@@ -135,11 +138,12 @@ int main(int argc, char** argv) {
         for (int j = 0; j < graph_k - 1; j++) {
             fin >> dist >> id;
             if (j < k) {
-                JA[count] = id;
+                // With duplicate points the first column may be a duplicate rather than
+                // the point itself; the point then appears later and takes its place.
+                JA[count] = (id == gid) ? id_1st : id;
                 A[count] = dist;
                 count += 1;
             }
-            if (id == gid) JA[count] = id_1st;
         }
     }
 

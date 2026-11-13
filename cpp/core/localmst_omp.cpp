@@ -1,4 +1,4 @@
-#include "../include/globals.h"
+#include "globals.h"
 #include "mst_omp.cpp"
 using namespace std;
 

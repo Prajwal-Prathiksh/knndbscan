@@ -1,4 +1,4 @@
-#include "../include/globals.h"
+#include "globals.h"
 using namespace std;
 
 inline int find_parent(const int i) {

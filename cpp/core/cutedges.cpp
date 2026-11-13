@@ -1,4 +1,4 @@
-#include "../include/globals.h"
+#include "globals.h"
 using namespace std;
 
 void update_cutedges(point_int n0, point_int ISTART, const vector<point_int> R,

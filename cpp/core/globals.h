@@ -2,22 +2,28 @@
 #define _globals
 
 #include <assert.h>
-#include <bits/stdc++.h>
-#include <getopt.h>
-#include <math.h>
-#include <mpi.h>
 #include <omp.h>
-#include <time.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <map>
 #include <string>
 #include <vector>
+
+// The command-line program runs on MPI ranks; the shared library is single-process.
+#ifdef KNNDBSCAN_WITH_MPI
+#include <mpi.h>
+#else
+#include "mpi_serial.h"
+#endif
 
 using namespace std;
 extern int maxk;

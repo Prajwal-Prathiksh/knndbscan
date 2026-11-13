@@ -1,129 +1,76 @@
-.PHONY: test
+SHELL := /bin/bash
+.DEFAULT_GOAL := help
+.PHONY: help install test coverage lint format build test-wheel test-dist cli test-cli clean
 
-# Default target
+PYTHONS ?= 3.10 3.11 3.12 3.13 3.14 3.15 3.14t
+RESOLUTIONS ?= highest lowest-direct
+CLI_BUILD := build/cli
+
 help:
-	@echo "Available targets:"
-	@echo "  help          Show this help message"
-	@echo "  build         Build distribution packages (wheel and sdist)"
-	@echo "  check         Run all checks (lint + test)"
-	@echo "  clean         Clean build artifacts"
-	@echo "  format        Format code with ruff and clang-format"
-	@echo "  install       Install the package in editable mode"
-	@echo "  install-debug Install package with optimizations and debug symbols (-O3 -g)"
-	@echo "  install-gpu   Install the package with GPU support in editable mode"
-	@echo "  lint          Run linting tools"
-	@echo "  publish       Publish to PyPI"
-	@echo "  publish-test  Publish to Test PyPI"
-	@echo "  repair-wheels Repair wheels for manylinux compatibility"
-	@echo "  test          Run unit tests with pytest"
-	@echo "  test-examples Run example scripts"
-	@echo "  test-gpu      Run GPU-specific example scripts"
+	@echo "install     uv sync: editable install plus the dev group"
+	@echo "test        pytest on the editable install"
+	@echo "coverage    pytest with a coverage report (htmlcov/)"
+	@echo "lint        ruff, mypy and clang-format checks"
+	@echo "format      apply ruff and clang-format"
+	@echo "build       wheel and sdist into dist/"
+	@echo "test-wheel  build, then test-dist"
+	@echo "test-dist   install dist/*.whl for each of PYTHONS x RESOLUTIONS and run the tests"
+	@echo "cli         build the MPI command-line program into $(CLI_BUILD)/"
+	@echo "test-cli    build the CLI and compare it with the library on 1-3 MPI ranks"
+	@echo "clean       remove build artifacts"
 
-# Build distribution packages
-build:
-	DEBUG=0 uv build
+install:
+	uv sync
 
-# Run all checks
-check: lint test
+test:
+	uv run pytest
 
-# Clean build artifacts
-clean:
-	rm -f .coverage
-	rm -f knndbscan/*.so
-	rm -f knndbscan/_core*.so
-	rm -rf *.egg-info/
-	rm -rf .mypy_cache/
-	rm -rf .pytest_cache/
-	rm -rf .ruff_cache/
-	rm -rf __pycache__/
-	rm -rf build/
-	rm -rf dist/
-	rm -rf htmlcov/
+coverage:
+	uv run pytest --cov --cov-report=term-missing --cov-report=html
 
-# Format code
-format:
-	uv run --group lint ruff format .
-	uv run --group lint clang-format -i src/*.cpp include/*.h test/*.cpp
-
-# Sync development dependencies and install package in editable mode
-install: 
-	uv sync --all-groups
-	DEBUG=0 uv run pip install -e .
-
-# Install package with optimizations and debug symbols
-install-debug:
-	uv sync --all-groups
-	DEBUG=1 uv run pip install -e . --force-reinstall --no-deps
-
-# Sync with GPU support and build C++ extension
-install-gpu:
-	uv sync --all-groups --extra gpu
-	DEBUG=0 uv run pip install -e .
-
-# Run linting tools
 lint:
-	uv run --group lint ruff check .
-	uv run --group lint mypy knndbscan/ || true
-	uv run --group lint clang-format --dry-run --Werror src/*.cpp include/*.h test/*.cpp
+	uv run ruff check .
+	uv run ruff format --check .
+	uv run mypy
+	uv run clang-format --dry-run --Werror cpp/*.cpp cpp/*.h cpp/include/*.h cpp/cli/*.cpp cpp/core/*
 
-# Load environment variables from .env file
-load-env-vars:
-	@if [ ! -f ".env" ]; then \
-		echo "WARNING: .env file not found. Make sure to set environment variables manually."; \
-	else \
-		echo "✓ .env file found"; \
-	fi
+format:
+	uv run ruff check --fix .
+	uv run ruff format .
+	uv run clang-format -i cpp/*.cpp cpp/*.h cpp/include/*.h cpp/cli/*.cpp cpp/core/*
 
-# Publish to PyPI
-publish: build repair-wheels load-env-vars
-	@echo "Publishing to PyPI..."
-	@set -a; [ -f ".env" ] && . ./.env; \
-	if [ -z "$$UV_PUBLISH_TOKEN_PYPI" ]; then \
-		echo "ERROR: UV_PUBLISH_TOKEN_PYPI environment variable required."; \
-		echo "  1. Add to .env file: UV_PUBLISH_TOKEN_PYPI=your-production-token, OR"; \
-		echo "  2. Set environment variable: export UV_PUBLISH_TOKEN_PYPI='pypi-...'"; \
-		echo ""; \
-		echo "Get API token from: https://pypi.org/manage/account/#api-tokens"; \
-		exit 1; \
-	fi; \
-	UV_PUBLISH_TOKEN="$$UV_PUBLISH_TOKEN_PYPI" uv publish --publish-url https://upload.pypi.org/legacy/
+build:
+	rm -rf dist
+	uv build
 
-# Publish to Test PyPI
-publish-test: build repair-wheels load-env-vars
-	@echo "Publishing to Test PyPI..."
-	@set -a; [ -f ".env" ] && . ./.env; \
-	if [ -z "$$UV_PUBLISH_TOKEN" ]; then \
-		echo "ERROR: UV_PUBLISH_TOKEN environment variable required."; \
-		echo "  1. Create .env file with: UV_PUBLISH_TOKEN=your-token, OR"; \
-		echo "  2. Set environment variable: export UV_PUBLISH_TOKEN='pypi-...'"; \
-		echo ""; \
-		echo "Get API token from: https://test.pypi.org/manage/account/#api-tokens"; \
-		exit 1; \
-	fi; \
-	uv publish --publish-url https://test.pypi.org/legacy/
+# The wheel is py3-none-<platform>; this proves it on each interpreter, with the newest
+# and the oldest dependency versions the metadata allows. The dependencies are installed
+# from pyproject.toml as direct requirements, because lowest-direct lowers only those.
+test-wheel: build
+	$(MAKE) test-dist
 
-
-# Repair wheels for manylinux compatibility
-repair-wheels:
-	@echo "Repairing wheels for manylinux compatibility..."
-	for wheel in dist/*.whl; do \
-		if [[ "$$wheel" == *"linux_x86_64.whl" ]]; then \
-			echo "Repairing $$wheel"; \
-			uv run auditwheel repair "$$wheel" --plat manylinux_2_39_x86_64 -w dist/; \
-			rm "$$wheel"; \
-		fi; \
+test-dist:
+	@set -e; for python in $(PYTHONS); do \
+	  for resolution in $(RESOLUTIONS); do \
+	    echo "=== Python $$python, $$resolution dependencies"; \
+	    env=build/test-wheel/$$python-$$resolution; rm -rf $$env; \
+	    uv venv -q --python $$python $$env; \
+	    uv pip install -q --python $$env pytest; \
+	    uv pip install -q --python $$env --only-binary :all: --resolution $$resolution \
+	      -r pyproject.toml; \
+	    uv pip install -q --python $$env --no-deps dist/*.whl; \
+	    uv pip list -q --python $$env 2>/dev/null | grep -E '^(numpy|scikit-learn) '; \
+	    $$env/bin/python -m pytest -q -p no:cacheprovider tests; \
+	  done; \
 	done
 
-# Run all tests
-test:
-	uv run --group test pytest
+cli:
+	uv run cmake -S . -B $(CLI_BUILD) -G Ninja -DKNNDBSCAN_BUILD_LIBRARY=OFF -DKNNDBSCAN_BUILD_CLI=ON
+	uv run cmake --build $(CLI_BUILD)
 
-# Run example scripts
-test-examples:
-	uv run python examples/test_binding.py
-	uv run python examples/benchmark_threading.py
-	uv run python examples/usage.py
+test-cli: cli
+	KNNDBSCAN_CLI=$(CURDIR)/$(CLI_BUILD)/knndbscan uv run pytest tests/test_cli.py
 
-# Run GPU-specific example scripts
-test-gpu:
-	uv run python examples/usage_gpu.py
+clean:
+	rm -rf build dist htmlcov .coverage .pytest_cache .mypy_cache .ruff_cache
+	find . -name __pycache__ -type d -prune -not -path './.venv/*' -exec rm -rf {} +
