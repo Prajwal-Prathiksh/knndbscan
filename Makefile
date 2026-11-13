@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help install test coverage lint format build test-wheel test-dist cli test-cli clean
+.PHONY: help install test coverage lint format build test-wheel test-dist cli test-cli compile-commands clean
 
 PYTHONS ?= 3.10 3.11 3.12 3.13 3.14 3.15 3.14t
 RESOLUTIONS ?= highest lowest-direct
@@ -17,6 +17,7 @@ help:
 	@echo "test-dist   install dist/*.whl for each of PYTHONS x RESOLUTIONS and run the tests"
 	@echo "cli         build the MPI command-line program into $(CLI_BUILD)/"
 	@echo "test-cli    build the CLI and compare it with the library on 1-3 MPI ranks"
+	@echo "compile-commands  build/compile_commands.json for editors (C/C++ extension, clangd)"
 	@echo "clean       remove build artifacts"
 
 install:
