@@ -7,7 +7,8 @@ using namespace std;
 int gsize = 0;
 int num_threads = 0;
 float eps = 0.0;
-float sentinel = 10000.;
+// Weight of "no minimum edge yet": must exceed every edge weight, so it is infinite.
+float sentinel = numeric_limits<float>::infinity();
 int minPts = 0;
 int maxk = 0;  // nearest neighbor # stored in graph for each point, may not be the same
                // as minPts
@@ -27,7 +28,6 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
     minPts = minPts_value;
     maxk = maxk_value;
     eps = eps_value;
-    float sentinel = 10000.;
 
 #pragma omp parallel
     {
