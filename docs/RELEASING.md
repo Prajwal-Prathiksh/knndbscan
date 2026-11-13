@@ -10,7 +10,7 @@ anywhere.
 | publishing a GitHub release | PyPI | `pypi` |
 
 Both run only after every other job passes: lint, the tests, the MPI CLI test, wheels for
-Linux x86_64 / aarch64 and macOS arm64 / x86_64 (built on macOS 15, tested on macOS 26), and
+Linux x86_64 / aarch64 and macOS 26 arm64 / x86_64, and
 the Linux wheel on every supported Python with the newest and the oldest allowed dependencies.
 
 ## One-time setup
