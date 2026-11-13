@@ -88,7 +88,8 @@ test-command = "pytest {project}/tests"
 [tool.cibuildwheel.macos]
 # Apple Clang has no OpenMP runtime; delocate bundles Homebrew's libomp into the wheel,
 # whose deployment target must not be older than the one libomp was built for: the
-# macOS version of the CI runner (macos-15 in .github/workflows/ci.yml).
+# macOS version of the CI runners (macos-15 and macos-15-intel in .github/workflows/ci.yml).
+# Wheels built there also run on every later macOS; CI tests them on macOS 26.
 before-all = "brew install libomp"
 environment = { MACOSX_DEPLOYMENT_TARGET = "15.0", OpenMP_ROOT = "$(brew --prefix libomp)" }
 
