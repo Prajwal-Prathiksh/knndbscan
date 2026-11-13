@@ -4,7 +4,9 @@ The algorithm is that of Chen, Ruys and Biros, "KNN-DBSCAN: a DBSCAN in high dim
 ([arXiv:2009.04552](https://arxiv.org/abs/2009.04552)); section, algorithm and figure
 numbers below refer to it. This document maps the paper onto `cpp/core/` and records the
 invariants the code depends on. The definitions themselves are restated, independently of
-the code, in `tests/reference.py`.
+the code, in `tests/reference.py`. For the method itself (definitions, theorems with
+proof sketches, pseudocode, the distributed algorithm and how correctness is verified),
+read the report [docs/report/knndbscan.pdf](report/knndbscan.pdf).
 
 ## What is computed
 

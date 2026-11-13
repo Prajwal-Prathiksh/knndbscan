@@ -70,7 +70,7 @@ make test-dist PYTHONS=3.15 RESOLUTIONS=lowest-direct  # one cell of that matrix
 | `src/knndbscan/` | The Python package: `_native.py` (ctypes binding), `cluster.py` (public API), `neighbors.py` (kNN graphs on CPU or GPU). |
 | `tests/` | pytest suite; `reference.py` is the independent reference implementation. |
 | `examples/` | Runnable examples (`uv run python examples/<name>.py`). |
-| `docs/` | ALGORITHM.md (paper to code), RELEASING.md, the SC20 environment. |
+| `docs/` | ALGORITHM.md (paper to code), RELEASING.md, the SC20 environment; `report/` the Typst report on the method (`make report`), written with `report/companion/`, a standalone Typst package for technical companions, with its panels and example numbers in `report/figures/`, computed by `make_figures.py` (`make report-figures`). |
 
 - `src/knndbscan/__init__.py` re-exports the public API; import from `knndbscan`, not from
   the module a name lives in.
@@ -138,6 +138,10 @@ shapes how it may be changed:
 - When existing code gains new behaviour, rename the function, its docstring and related
   identifiers to describe what it now does, and update every caller, test and doc.
 - Add or update tests with every behaviour change.
+- When a change alters what `docs/report/knndbscan.typ` states (an invariant, a stage, a
+  measured number), update it and rebuild the PDF with `make report` in the same change.
+  After a change to `cpp/core/`, also run `make report-figures`: it stops when its replay
+  of the algorithm no longer matches the library.
 - Add a line under `## [Unreleased]` in `CHANGELOG.md` for every change a user of the
   package or the CLI can notice, written for them (what changed and what to do about it),
   not as a commit message. The release notes are made from it, and a tag without a
@@ -249,3 +253,52 @@ it was built. History belongs in commit messages.
   (the paper, a library's documentation) only for what a comment cannot hold.
 - No one-off measurements as decoration; keep a number only when it justifies a constant
   or a limit, and give the condition it depends on.
+
+## The technical companion (`docs/report/`)
+
+`docs/report/knndbscan.typ` explains the paper and this implementation to a reader who
+has not read the paper. It must be rigorous enough to check against the paper and
+intuitive enough to follow without it: every idea is given as a picture, in words, and
+in symbols, and the picture and the formal statement must say the same thing so that
+each checks the other.
+
+How a section explains, in this order:
+
+1. `question`: the problem the section solves, asked before any answer.
+2. The picture: `scene` (one picture beside its words), `filmstrip` (a process in time,
+   or `arrows: false` for a comparison), or `step` (pseudocode with the lines in `focus`
+   beside what they do). Choose the layout that fits the idea; not everything is two
+   columns.
+3. Plain words: what the picture shows, then its name. Name a term after showing it.
+4. Symbols: `translate` (words beside notation), then `definition`, `lemma`, `theorem`
+   or `invariant`, with a `proof` sketch.
+5. `takeaway`: the section's idea in one sentence.
+
+- One running example throughout: the same points in every picture.
+- Show the failure before the fix. Each defect or edge case is drawn where it arises, as
+  a `step` on the pseudocode line where it happens.
+- Write each algorithm once, as data (`ln`, `require`, `ensure`), and give it in full in
+  an `algorithm`. Show it again in `step`s with `focus` and, for long algorithms,
+  `window`, instead of writing "see line 7".
+- Colours mean one thing everywhere: core blue, border gold, noise a grey cross, and red
+  for a cut edge or for what goes wrong. Name a colour in the text with `swatch`.
+
+How it is built:
+
+- Typst 0.15 (a system install, not from `uv`); fletcher is fetched from `@preview` on
+  the first compile. `make report-figures` writes the panels, then `make report` the PDF.
+  Commit the sources, the SVGs, `example.json` and the PDF together.
+- `docs/report/companion/` is a standalone Typst package (read its README), so that
+  companions for other projects can use it. The report imports it by relative path. A
+  generic building block goes in the package, with a README entry; anything about
+  kNN-DBSCAN stays in `knndbscan.typ`.
+- `figures/make_figures.py` computes every data panel, never by hand. It replays the
+  algorithm exactly as the pseudocode states it and stops unless the replay matches the
+  library. Small schematics (pointer states, cycles) are fletcher diagrams in the
+  `.typ`.
+- Every number the text quotes, and every panel colour, comes from
+  `figures/example.json` (`#ex.n_core`); none is typed into the prose.
+- Output is byte-identical between runs: a fixed SVG hash salt, and no dates in the SVGs
+  or the PDF.
+- Render the pages you changed to PNG (`typst compile --format png`) and look at each one
+  before committing.

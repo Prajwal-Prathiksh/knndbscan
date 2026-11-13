@@ -1,0 +1,14 @@
+[package]
+name = "companion"
+version = "0.1.0"
+entrypoint = "lib.typ"
+authors = ["Prajwal Prathiksh"]
+license = "BSD-3-Clause"
+description = "Technical companions that explain with pictures first: questions, scenes, filmstrips and pseudocode storyboards beside formal statements."
+keywords = ["report", "exposition", "pseudocode", "storyboard", "theorem"]
+categories = ["report"]
+compiler = "0.15.0"
+
+[template]
+path = "template"
+entrypoint = "main.typ"

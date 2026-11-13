@@ -1,0 +1,58 @@
+paper:
+  type: article
+  title: "KNN-DBSCAN: a DBSCAN in high dimensions"
+  author: ["Chen, Youguang", "Ruys, William", "Biros, George"]
+  date: 2024
+  serial-number:
+    arxiv: "2009.04552"
+  url: https://arxiv.org/abs/2009.04552
+
+ester1996:
+  type: article
+  title: A density-based algorithm for discovering clusters in large spatial databases with noise
+  author: ["Ester, Martin", "Kriegel, Hans-Peter", "Sander, Jörg", "Xu, Xiaowei"]
+  date: 1996
+  parent:
+    type: proceedings
+    title: Proceedings of the Second International Conference on Knowledge Discovery and Data Mining (KDD)
+  page-range: 226-231
+
+schubert2017:
+  type: article
+  title: "DBSCAN revisited, revisited: why and how you should (still) use DBSCAN"
+  author: ["Schubert, Erich", "Sander, Jörg", "Ester, Martin", "Kriegel, Hans-Peter", "Xu, Xiaowei"]
+  date: 2017
+  parent:
+    type: periodical
+    title: ACM Transactions on Database Systems
+    volume: 42
+    issue: 3
+
+xiao2016:
+  type: article
+  title: Parallel algorithms for nearest neighbor search problems in high dimensions
+  author: ["Xiao, Bo", "Biros, George"]
+  date: 2016
+  parent:
+    type: periodical
+    title: SIAM Journal on Scientific Computing
+    volume: 38
+    issue: 5
+
+yu2018:
+  type: article
+  title: Distributed-memory hierarchical compression of dense SPD matrices
+  author: ["Yu, Chenhan D.", "Reiz, Severin", "Biros, George"]
+  date: 2018
+  parent:
+    type: proceedings
+    title: Proceedings of the International Conference for High Performance Computing, Networking, Storage, and Analysis (SC18)
+
+patwary2012:
+  type: article
+  title: A new scalable parallel DBSCAN algorithm using the disjoint-set data structure
+  author: ["Patwary, Md. Mostofa Ali", "Palsetia, Diana", "Agrawal, Ankit", "Liao, Wei-keng", "Manne, Fredrik", "Choudhary, Alok"]
+  date: 2012
+  parent:
+    type: proceedings
+    title: Proceedings of the International Conference for High Performance Computing, Networking, Storage, and Analysis (SC12)
