@@ -35,20 +35,62 @@
   _Proof._ #body #h(1fr) $square$
 ]
 
-// Pseudocode conventions (with lovelace: `pseudocode-list(..pseudocode-style)[...]`):
-// keywords in bold, comments as small grey italics after `//`, no end keywords and no
-// indentation guides, Require/Ensure lines unnumbered.
+// Pseudocode is data, so one algorithm can be drawn in full and again with some lines in
+// focus (a storyboard step) without being written twice:
+//
+//   #let alg = (require[...], ensure[...], ln(0, [*repeat*]), ln(1, [$x <- y$], note: [why]))
+//   #pseudocode(alg)                  // every line
+//   #pseudocode(alg, focus: (2, 3))   // lines 2-3 highlighted, the rest dimmed
+//
+// Keywords are bold in the body; notes are drawn as small grey italics after `//` at the
+// line's end; there are no end keywords and no indentation guides.
 #let comment-colour = luma(135)
-#let pseudocode-style = (stroke: none, indentation: 1.3em, line-gap: 0.55em)
-// A comment at the right end of a line.
-#let cmt(body) = {
-  h(1fr)
-  text(fill: comment-colour, size: 0.88em, style: "italic")[#"//" #body]
+#let dimmed-colour = luma(175)
+#let focus-colour = rgb("#fdf0c8")
+#let focus-rule = rgb("#d39b00")
+
+// One numbered line at indentation `depth`, with an optional end-of-line note.
+#let ln(depth, body, note: none) = (depth: depth, body: body, note: note, numbered: true)
+#let require(body) = (depth: 0, body: [*Require:* #body], note: none, numbered: false)
+#let ensure(body) = (depth: 0, body: [*Ensure:* #body], note: none, numbered: false)
+
+// `focus`: line numbers to highlight, and "in" for the Require/Ensure lines; the other
+// lines are dimmed and lose their notes, so that the eye lands on the focus. With
+// `focus: none` every line is drawn plainly.
+#let pseudocode(lines, focus: none, notes: true) = {
+  let number = 0
+  let cells = ()
+  for line in lines {
+    let n = none
+    if line.numbered {
+      number += 1
+      n = number
+    }
+    let active = focus == none or (if n == none { "in" in focus } else { n in focus })
+    let lit = focus != none and active
+    let body = pad(left: line.depth * 1.25em, {
+      line.body
+      if notes and line.note != none and active {
+        h(1fr)
+        h(0.8em)
+        text(fill: comment-colour, size: 0.88em, style: "italic")[#"//" #line.note]
+      }
+    })
+    let colour = if active { black } else { dimmed-colour }
+    cells.push(grid.cell(
+      fill: if lit { focus-colour },
+      stroke: if lit { (left: 2pt + focus-rule) },
+      align(right, text(0.8em, fill: if active { muted } else { dimmed-colour }, if n != none [#n])),
+    ))
+    cells.push(grid.cell(fill: if lit { focus-colour }, {
+      set text(fill: colour)
+      show ref: set text(fill: colour)
+      body
+    }))
+  }
+  set par(justify: false, leading: 0.45em)
+  grid(columns: (1.4em, 1fr), column-gutter: 0.5em, inset: (x: 2pt, y: 0.3em), ..cells)
 }
-// A comment on a line of its own.
-#let lcmt(body) = text(fill: comment-colour, size: 0.88em, style: "italic")[#"//" #body]
-#let require(body) = [*Require:* #body]
-#let ensure(body) = [*Ensure:* #body]
 
 // A numbered algorithm; the body is usually a pseudocode list.
 #let algorithm(caption: none, body) = figure(
@@ -56,6 +98,40 @@
   supplement: [Algorithm],
   caption: caption,
   body,
+)
+
+// A storyboard step: on the left the algorithm, with the lines this step is about in focus,
+// and the narration; on the right what those lines do, so the reader never has to look
+// elsewhere. `code` is (label: <alg:...>, lines: ...), or none for a step that no
+// pseudocode line covers.
+#let step-counter = counter("storyboard-step")
+#let step(title, code: none, focus: none, visual, body) = block(
+  breakable: false,
+  width: 100%,
+  above: 1.3em,
+  below: 1.3em,
+  {
+    step-counter.step()
+    block(below: 0.5em, stroke: (bottom: 0.5pt + luma(200)), inset: (bottom: 3pt), width: 100%)[
+      #text(fill: accent, weight: "bold")[#context step-counter.display() #h(0.4em) #title]
+      #h(1fr)
+      #if code != none { text(8pt, fill: muted, ref(code.label)) }
+    ]
+    let narration = text(9.5pt, body)
+    grid(
+      columns: (1.08fr, 1fr),
+      column-gutter: 1.4em,
+      // End-of-line notes would wrap in a half-width column; the narration carries them.
+      if code != none {
+        set text(8.5pt)
+        block(fill: luma(250), inset: (x: 4pt, y: 5pt), radius: 2pt, width: 100%,
+          pseudocode(code.lines, focus: focus, notes: false))
+        v(0.2em)
+        narration
+      } else { narration },
+      align(center, visual),
+    )
+  },
 )
 
 #let callout(title, colour, body) = block(

@@ -1,5 +1,4 @@
 #import "template.typ": *
-#import "@preview/lovelace:0.3.1": pseudocode-list
 #import "@preview/fletcher:0.5.8" as fletcher: diagram, node, edge
 
 #show: report.with(
@@ -46,8 +45,9 @@ directed graph; @sec:distributed distributes it over MPI ranks;
 @sec:numerics collects the numerical conventions and invariants an implementation must
 keep; @sec:verification describes how correctness is verified, with the defects this
 found in the original implementation; @sec:performance summarizes performance.
-@app:pictures shows each stage, and each defect, on a small example in pictures tied
-to the lines of the pseudocode.
+@app:pictures retells the algorithm as a storyboard on a small example: each step shows
+the pseudocode with the lines in question highlighted, beside a picture of what they do,
+for every stage and for every defect.
 
 #note[
   Numbers such as "Theorem 3.4" refer to the paper. Statements here are restated in a
@@ -193,7 +193,7 @@ guarantees.
   The connected components of a minimum spanning forest of $G_(M, "core")$ are the
   kNN-DBSCAN clusters of the core points (and those of $G_(epsilon, "core")$ are the
   DBSCAN clusters).
-]
+] <thm:mst>
 
 A spanning forest has the same components as the graph, so the statement is immediate;
 its value is algorithmic. Spanning forests can be built in parallel with Borůvka's
@@ -217,27 +217,27 @@ steps, shown in @alg:local for one shared-memory process:
   the root of its new tree.
 / Relabelling: each core point takes the root of its subtree.
 
-#algorithm(caption: [Local Borůvka over the core points of one process (paper's Algorithm 2).])[
-  #pseudocode-list(..pseudocode-style)[
-    - #require[core points $C$ of this process; neighbor rows sorted by distance]
-    - #ensure[$R[i]$, the root of the subtree that contains each $i in C$]
-    + $R[i] <- i$ and $L[i] <- 1$ for every $i in C$ #cmt[$L[i]$: next column of row $i$]
-    + *repeat*
-      + $E_min [u] <- ("none", +infinity)$ for every subtree $u$
-      + *parallel for* $i in C$ #cmt[minimum edges]
-        + *while* $L[i] <= M - 1$
-          + $q <-$ neighbor $L[i]$ of $i$
-          + *if* $q$ is stored on another rank *then* record cut edge $(i, q)$; $L[i] <- L[i] + 1$
-          + *else if* $q in C$ *and* $R[q] != R[i]$ *then* `pwrite`$(E_min [R[i]], R[q], d(i, q))$; *break* #cmt[rows are sorted]
-          + *else* $L[i] <- L[i] + 1$ #cmt[non-core, or same subtree]
-      + $p(u) <- E_min [u]."target"$, or $u$ if it has none #cmt[break symmetry]
-      + *if* $p(p(u)) = u$ *and* $u < p(u)$ *then* $p(u) <- u$ #cmt[mutual pair: smaller id is root]
-      + *repeat* $p(u) <- p(p(u))$ *until* no pointer changes #cmt[pointer jumping]
-      + join the subtrees left on cycles #cmt[@sec:cycles]
-      + $R[i] <- p(R[i])$ for every $i in C$ #cmt[relabel]
-    + *until* the number of subtrees does not decrease
-  ]
-] <alg:local>
+#let local-boruvka = (
+  require[core points $C$ of this process; neighbor rows sorted by distance],
+  ensure[$R[i]$, the root of the subtree that contains each $i in C$],
+  ln(0, [$R[i] <- i$ and $L[i] <- 1$ for every $i in C$], note: [$L[i]$: next column of row $i$]),
+  ln(0, [*repeat*]),
+  ln(1, [$E_min [u] <- ("none", +infinity)$ for every subtree $u$]),
+  ln(1, [*parallel for* $i in C$], note: [minimum edges]),
+  ln(2, [*while* $L[i] <= M - 1$]),
+  ln(3, [$q <-$ neighbor $L[i]$ of $i$]),
+  ln(3, [*if* $q$ is stored on another rank *then* record cut edge $(i, q)$; $L[i] <- L[i] + 1$]),
+  ln(3, [*else if* $q in C$ *and* $R[q] != R[i]$ *then* `pwrite`$(E_min [R[i]], R[q], d(i, q))$; *break*], note: [rows are sorted]),
+  ln(3, [*else* $L[i] <- L[i] + 1$], note: [non-core, or same subtree]),
+  ln(1, [$p(u) <- E_min [u]."target"$, or $u$ if it has none], note: [break symmetry]),
+  ln(1, [*if* $p(p(u)) = u$ *and* $u < p(u)$ *then* $p(u) <- u$], note: [mutual pair: smaller id is root]),
+  ln(1, [*repeat* $p(u) <- p(p(u))$ *until* no pointer changes], note: [pointer jumping]),
+  ln(1, [join the subtrees left on cycles], note: [@sec:cycles]),
+  ln(1, [$R[i] <- p(R[i])$ for every $i in C$], note: [relabel]),
+  ln(0, [*until* the number of subtrees does not decrease]),
+)
+
+#algorithm(caption: [Local Borůvka over the core points of one process (paper's Algorithm 2).], pseudocode(local-boruvka)) <alg:local>
 
 Two details matter for cost. Rows are sorted, so the first eligible neighbor of a point
 is its lightest outgoing edge, and the scan stops there. And an edge that has become
@@ -402,39 +402,39 @@ point's rank knows. Border points may join any adjacent cluster (@sec:dbscan); o
 several ranks prefers a core neighbor on its own rank, which is why border assignments,
 unlike clusters of core points, may differ between rank counts.
 
-#algorithm(caption: [kNN-DBSCAN on one rank: `knndbscan()` (paper's Algorithm 1).])[
-  #pseudocode-list(..pseudocode-style)[
-    - #require[this rank's rows of the kNN graph, sorted, without the point itself; $epsilon$; $M$]
-    - #ensure[a cluster label for each of this rank's points, $-1$ for noise]
-    + $C <- {i : "distance in column" M - 1 "of row" i <= epsilon}$ #cmt[I. core points (@lem:classify)]
-    + $R$, cut edges $<-$ local Borůvka over $C$ #cmt[II. @alg:local]
-    + number this rank's subtrees after those of lower ranks #cmt[III. `Allgather`]
-    + rewrite each cut edge $(i, j)$ as $(R[i], R[j])$ #cmt[IV. `Alltoallv` to $j$'s rank]
-    + roots $<-$ cut MST over the subtrees #cmt[V. @alg:cut]
-    + $R[i] <-$ root of $R[i]$ for every $i in C$
-    + *parallel for* each non-core point $i$ #cmt[VI. border points]
-      + $q <-$ first core neighbor of $i$ within $epsilon$, preferring one on this rank #cmt[`Alltoallv` if remote]
-      + $R[i] <- R[q]$ if $q$ exists, otherwise $-1$ #cmt[noise]
-  ]
-] <alg:driver>
+#let driver = (
+  require[this rank's rows of the kNN graph, sorted, without the point itself; $epsilon$; $M$],
+  ensure[a cluster label for each of this rank's points, $-1$ for noise],
+  ln(0, [$C <- {i : "distance in column" M - 1 "of row" i <= epsilon}$], note: [I. core points (@lem:classify)]),
+  ln(0, [$R$, cut edges $<-$ local Borůvka over $C$], note: [II. @alg:local]),
+  ln(0, [number this rank's subtrees after those of lower ranks], note: [III. `Allgather`]),
+  ln(0, [rewrite each cut edge $(i, j)$ as $(R[i], R[j])$], note: [IV. `Alltoallv` to $j$'s rank]),
+  ln(0, [roots $<-$ cut MST over the subtrees], note: [V. @alg:cut]),
+  ln(0, [$R[i] <-$ root of $R[i]$ for every $i in C$]),
+  ln(0, [*parallel for* each non-core point $i$], note: [VI. border points]),
+  ln(1, [$q <-$ first core neighbor of $i$ within $epsilon$, preferring one on this rank], note: [`Alltoallv` if remote]),
+  ln(1, [$R[i] <- R[q]$ if $q$ exists, otherwise $-1$], note: [noise]),
+)
 
-#algorithm(caption: [Cut MST: Borůvka over subtrees across ranks (paper's Algorithm 4).])[
-  #pseudocode-list(..pseudocode-style)[
-    - #require[subtrees, each owned by one rank; cut edges $(u, v, w)$ between subtree ids]
-    - #ensure[the root of every subtree]
-    + *repeat*
-      + *parallel for* each subtree $u$ this rank touches: its lightest local cut edge #cmt[local proposal]
-      + send each proposal to the owner of $u$, which keeps the lightest as $E_min [u]$ #cmt[`Alltoallv`]
-      + owners break symmetry between mutual pairs #cmt[as in @alg:local]
-      + *repeat* #cmt[distributed pointer jumping]
-        + for each unresolved $u$, ask the owner of $p(u)$ for $p(p(u))$ #cmt[`Alltoallv` request and reply]
-        + keep $u$ unresolved if its chain returns to $u$ #cmt[power-of-two cycles]
-      + *until* every subtree is resolved, *or* the unresolved count stalls
-      + *if* stalled *then* group the unresolved subtrees on rank 0 with a union-find #cmt[`Gatherv`, `Scatterv`]
-      + share the new roots; relabel cut edges, dropping those inside one subtree #cmt[`Allgatherv`]
-    + *until* the global number of subtrees does not decrease
-  ]
-] <alg:cut>
+#algorithm(caption: [kNN-DBSCAN on one rank: `knndbscan()` (paper's Algorithm 1).], pseudocode(driver)) <alg:driver>
+
+#let cut-mst = (
+  require[subtrees, each owned by one rank; cut edges $(u, v, w)$ between subtree ids],
+  ensure[the root of every subtree],
+  ln(0, [*repeat*]),
+  ln(1, [*parallel for* each subtree $u$ this rank touches: its lightest local cut edge], note: [local proposal]),
+  ln(1, [send each proposal to the owner of $u$, which keeps the lightest as $E_min [u]$], note: [`Alltoallv`]),
+  ln(1, [owners break symmetry between mutual pairs], note: [as in @alg:local]),
+  ln(1, [*repeat*], note: [distributed pointer jumping]),
+  ln(2, [for each unresolved $u$, ask the owner of $p(u)$ for $p(p(u))$], note: [`Alltoallv` request and reply]),
+  ln(2, [keep $u$ unresolved if its chain returns to $u$], note: [power-of-two cycles]),
+  ln(1, [*until* every subtree is resolved, *or* the unresolved count stalls]),
+  ln(1, [*if* stalled *then* group the unresolved subtrees on rank 0 with a union-find], note: [`Gatherv`, `Scatterv`]),
+  ln(1, [share the new roots; relabel cut edges, dropping those inside one subtree], note: [`Allgatherv`]),
+  ln(0, [*until* the global number of subtrees does not decrease]),
+)
+
+#algorithm(caption: [Cut MST: Borůvka over subtrees across ranks (paper's Algorithm 4).], pseudocode(cut-mst)) <alg:cut>
 
 #implementation(title: [Communication and cost])[
   The communication is collective throughout: `Allgather` and `Allgatherv` for counts and
@@ -591,226 +591,274 @@ mpiexec -n 64 knndbscan -n N -e eps -m M -k K -t threads -i graph.txt -o labels.
 
 #bibliography("references.yml", title: [References])
 
+
 // ------------------------------------------------------------------------------- appendix
 #pagebreak()
 #counter(heading).update(0)
 #set heading(numbering: "A.1", supplement: [Appendix])
 
-// Pointer states drawn as a small graph: `pointers` maps each node to its target, and a
-// node pointing at itself (a "root") is drawn with a loop and shaded.
-#let pointer-state(positions, pointers, shade: rgb("#f6d7d2")) = {
+// Numbers about the example, written by figures/make_figures.py with the panels.
+#let ex = json("figures/example.json")
+#let panel(name) = image("figures/" + name + ".svg", width: 100%)
+#let local = (label: <alg:local>, lines: local-boruvka)
+#let one-rank = (label: <alg:driver>, lines: driver)
+#let cut = (label: <alg:cut>, lines: cut-mst)
+#let red = rgb("#c0392b")
+
+// Pointer states drawn as a small graph: `pointers` maps each node to its target; a node
+// pointing at itself looks like a root, and is drawn shaded with a loop.
+#let pointer-state(positions, pointers) = {
   let roots = pointers.filter(((u, v)) => u == v).map(((u, v)) => u)
   diagram(
-    spacing: (2.4em, 2.2em),
+    spacing: (2.3em, 2.3em),
     node-stroke: 0.6pt,
     node-shape: circle,
-    node-inset: 3.5pt,
-    ..positions.pairs().map(((name, pos)) => node(pos, $#name$, name: label(name), fill: if name in roots { shade } else { white })),
+    node-inset: 3pt,
+    ..positions.pairs().map(((name, pos)) => node(
+      pos, text(9pt)[$#name$], name: label(name), fill: if name in roots { rgb("#f6d7d2") } else { white },
+    )),
     ..pointers.map(((u, v)) => if u == v {
-      edge(label(u), label(u), "-|>", bend: 130deg, stroke: 0.7pt + rgb("#c0392b"))
+      edge(label(u), label(u), "-|>", bend: 130deg, stroke: 0.6pt + red)
     } else {
-      edge(label(u), label(v), "-|>", bend: 14deg, stroke: 0.7pt)
+      edge(label(u), label(v), "-|>", bend: 14deg, stroke: 0.6pt)
     }),
   )
 }
 #let square = (a: (0, 0), b: (1, 0), c: (1, 1), d: (0, 1))
-#let triangle = (a: (0, 0), b: (1, 0), c: (0.5, 1))
-#let state(body, caption) = align(center, stack(spacing: 0.5em, body, text(8.5pt, caption)))
+#let triangle = (a: (0, 0), b: (1, 0), c: (0.5, 0.9))
+#let states(..pairs) = grid(
+  columns: pairs.pos().len(),
+  column-gutter: 1fr,
+  row-gutter: 0.5em,
+  ..pairs.pos().map(((d, _)) => align(center + horizon, d)),
+  ..pairs.pos().map(((_, c)) => align(center, text(8pt, c))),
+)
 
 = The algorithm in pictures <app:pictures>
 
-This appendix shows the algorithm at work on a small two-dimensional example, stage by
-stage, with each panel tied to the lines of @alg:local[], @alg:driver[] and @alg:cut[] it
-illustrates, and then shows, step by step, how each defect of @tab:defects arises. The
-data figures are computed, not drawn: `docs/report/figures/make_figures.py` replays
-Borůvka's rounds exactly as @alg:local states them and checks that the replay finds the
-library's clusters before drawing; final clusterings come from the library and from
-scikit-learn's DBSCAN. The example has three blobs, $M = 6$ and $epsilon = 0.55$.
+This appendix runs the algorithm on a small example and tells it as a sequence of steps.
+Each step shows the pseudocode on the left with the lines the step is about highlighted,
+and on the right what those lines do to the example, so the code and its effect can be
+read together. The example has #ex.n_points points in three blobs with $M = #ex.min_samples$
+and $epsilon = #ex.eps$. Its panels are computed, not drawn: `figures/make_figures.py`
+replays Borůvka's rounds exactly as @alg:local states them, stops unless the replay finds
+the library's clusters, and writes the numbers quoted here.
 
-== From points to clusters
+#step-counter.update(0)
+== One rank, from graph to labels
 
-#figure(
-  image("figures/pipeline.svg", width: 100%),
-  caption: [The definitions on the example. (a) Each point's $M - 1$ nearest neighbors
-    (arrows); the graph is directed. (b) The classes of @lem:classify: a point is core when
-    its $epsilon$-disk (dashed) holds $M$ points; the border point lies within $epsilon$ of
-    a core point, the noise point of none. (c) The undirected graph $G_(M, "core")$ and its
-    components, which are the clusters of kNN-DBSCAN. (d) DBSCAN on the same data: the
-    red pairs are core points within $epsilon$ of each other but not among each other's
-    $M - 1$ nearest neighbors, so DBSCAN joins two blobs that kNN-DBSCAN keeps apart, the
-    split that @thm:refine allows.],
-) <fig:pipeline>
+#step([The input: a directed kNN graph], code: one-rank, focus: ("in",), panel("knn-graph"))[
+  Each point lists its $M - 1 = #(ex.min_samples - 1)$ nearest neighbors in order of
+  distance, itself excluded: one arrow per entry. The graph is _directed_: $q$ among $p$'s
+  neighbors does not put $p$ among $q$'s, which is why an isolated point can still have
+  arrows leaving it.
+]
 
-Panel (b) is line 1 of @alg:driver; the components in (c) are what lines 2--6 compute;
-the border and noise points are labelled by lines 7--9.
+#step([Core points], code: one-rank, focus: (1,), panel("core-points"))[
+  A point is core when its $(M - 1)$-th neighbor is within $epsilon$: its $epsilon$-disk
+  (dashed) holds $M$ points, itself included. The test reads one column of each row and
+  needs no communication. Here #ex.n_core of the #ex.n_points points are core; the grey
+  disk holds too few points.
+]
 
-== Borůvka, round by round
+#step([Clusters of core points], code: one-rank, focus: (2, 3, 4, 5, 6), panel("components"))[
+  Keep the edges between core points and forget their direction: the components of this
+  graph, $G_(M, "core")$, are the clusters (@thm:mst). Lines 2--6 find them as a spanning
+  forest, on one rank by Borůvka (@app:boruvka) and on several by local trees joined across
+  ranks (@app:ranks). There are #ex.n_clusters.
+]
 
-#figure(
-  image("figures/boruvka.svg", width: 100%),
-  caption: [@alg:local on the core points of the example. Arrows are the edges selected in
-    a round (lines 4--9: each subtree's lightest edge to another subtree); colors are the
-    subtrees at the start of the round, and faint lines the edges of $G_(M, "core")$.
-    Double-headed arrows are mutual pairs, resolved by line 11. Pointer jumping and
-    relabelling (lines 12--14) turn the selections into the next round's subtrees: 92,
-    29, 9 and finally 3, the clusters, after which no subtree has an edge left (line 15).],
-) <fig:boruvka>
+#step([Border points and noise], code: one-rank, focus: (7, 8, 9), panel("labels"))[
+  Each remaining point takes the cluster of its first core neighbor within $epsilon$
+  (ringed; one is joined to the neighbor it follows), or is noise, $-1$, if it has none.
+  Here #ex.n_border points are border points and #ex.n_noise are noise.
+]
 
-Each round at least halves the number of subtrees that can still merge, so the number of
-rounds grows like $log n$; on this example the counts fall $92 -> 29 -> 9 -> 3$.
+#step([Not DBSCAN], panel("dbscan"))[
+  DBSCAN on the same data finds #ex.n_dbscan_clusters clusters. The red pairs are core
+  points within $epsilon$ of each other that are not among each other's $M - 1$ nearest
+  neighbors: DBSCAN links them, kNN-DBSCAN does not, so it keeps two blobs apart. The
+  core points and border points are the same in both methods; only the links differ,
+  and kNN-DBSCAN's clusters always refine DBSCAN's (@thm:refine).
+]
 
-== Across ranks
+#step-counter.update(0)
+== Borůvka, round by round <app:boruvka>
 
-#figure(
-  image("figures/distributed.svg", width: 100%),
-  caption: [The example on three ranks, with points numbered left to right so that each
-    rank's block is a vertical strip. (a) Edges of $G_(M, "core")$ inside a rank (grey) and
-    cut edges between ranks (red). (b) Stage II, local Borůvka without the cut edges: 8
-    subtrees, some of them single points. (c) Stages III--IV: each subtree becomes one
-    super-vertex, joined by the cut edges between them. (d) Stage V, the cut MST over the
-    super-vertices: its components are the same three clusters, as @thm:inexact
-    guarantees for any split.],
-) <fig:distributed>
+#step([Round 1: every subtree picks its lightest edge], code: local, focus: (1, 3, 4, 5, 6, 7, 8, 9), panel("boruvka-1"))[
+  Every core point starts as a subtree of its own (dark). It scans its row from the left
+  and stops at the first core neighbor in another subtree; rows are sorted, so that is
+  its lightest edge (arrows). Red arrows mark pairs of subtrees that chose each other:
+  there are #ex.mutual.at(0).
+]
 
-Panel (b) is line 2 of @alg:driver, (c) lines 3--4, and (d) @alg:cut. The more cut edges a
-split creates, the more of the work moves from the communication-free stage II to the
-communicating stage V, which is the scaling limit noted in @sec:performance.
+#step([Round 1: merge along the chosen edges], code: local, focus: (10, 11, 12, 13, 14), panel("boruvka-merged-1"))[
+  Each subtree points to the subtree its edge reaches. In a mutual pair the smaller id
+  points at itself and becomes a root; pointer jumping then takes every subtree to the
+  root of its tree, and relabelling hands that root to every point. The
+  #ex.rounds.at(0) subtrees become #ex.rounds.at(1), and each new subtree holds exactly
+  one mutual pair, its root. When selections close a longer cycle instead, nothing is a
+  root: @app:defects shows what then happens.
+]
 
-== Where implementations go wrong
+#step([Round 2], code: local, focus: (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14), panel("boruvka-2"))[
+  The same steps on the merged subtrees (coloured; their edges are the tree so far). A
+  point whose next neighbor is now in its own subtree moves past it, and $L[i]$ never moves
+  back, so every row is scanned once over all rounds. The #ex.rounds.at(1) subtrees
+  become #ex.rounds.at(2).
+]
 
-Each item below is a row of @tab:defects, drawn as it happens.
+#step([Round 3], code: local, focus: (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14), panel("boruvka-3"))[
+  #ex.rounds.at(2) subtrees become #ex.rounds.at(3). Each round at least halves the
+  subtrees that can still merge, so the rounds grow like $log n$.
+]
 
-=== Cycles that look like roots
+#step([No edge left: the clusters], code: local, focus: (15,), panel("boruvka-end"))[
+  The next round finds no edge between subtrees, the number of subtrees stays at
+  #ex.rounds.at(3), and the loop ends. The coloured edges are a spanning forest of
+  $G_(M, "core")$ with one tree per cluster.
+]
 
-Pointer jumping replaces every pointer $p$ by $p compose p$ in each round (line 12 of
-@alg:local, lines 5--8 of @alg:cut). On the four-cycle of @fig:cycle, every pointer
-reaches its own node after two rounds:
+#step-counter.update(0)
+== Across ranks <app:ranks>
 
-#figure(
-  grid(
-    columns: 4,
-    column-gutter: 1fr,
-    state(pointer-state(square, (("a", "b"), ("b", "c"), ("c", "d"), ("d", "a"))), [selections $p$]),
-    state(pointer-state(square, (("a", "c"), ("b", "d"), ("c", "a"), ("d", "b"))), [round 1: $p^2$]),
-    state(pointer-state(square, (("a", "a"), ("b", "b"), ("c", "c"), ("d", "d"))), [round 2: $p^4$, four "roots"]),
-    state(pointer-state(square, (("a", "a"), ("b", "a"), ("c", "a"), ("d", "a"))), [kept unresolved, then grouped]),
+#step([Blocks and cut edges], code: one-rank, focus: ("in", 1), panel("ranks"))[
+  The points are split into #ex.n_ranks contiguous blocks of rows, one per rank (here
+  numbered left to right, so blocks are strips). Each rank finds its core points alone.
+  An edge to a point of another rank is a _cut edge_ (red): there are #ex.n_cut_edges.
+]
+
+#step([Local Borůvka, without communication], code: one-rank, focus: (2,), panel("local-subtrees"))[
+  Each rank runs @alg:local on its block and records cut edges instead of following them.
+  The result is #ex.n_local_subtrees subtrees, some a single point: a cluster that spans
+  ranks is still in pieces.
+]
+
+#step([Subtrees become vertices], code: one-rank, focus: (3, 4), panel("super-vertices"))[
+  Each subtree gets a global id, owned by the rank that numbered it, and each cut edge
+  between points becomes an edge between their subtrees (#ex.n_links links here). The
+  cut MST works on this much smaller graph.
+]
+
+#step([Cut MST: the same clusters], code: one-rank, focus: (5, 6), panel("rank-clusters"))[
+  Borůvka once more, over the subtrees and across ranks (@alg:cut), and every point takes
+  its subtree's root. The clusters are those of one rank: by @thm:inexact the split never
+  changes them, however the points are distributed.
+]
+
+#step-counter.update(0)
+== Where implementations go wrong <app:defects>
+
+Each step below is a row of @tab:defects, shown at the line where it arises.
+
+#step([A cycle has no root], code: cut, focus: (5, 6, 8, 9), states(
+  (pointer-state(triangle, (("a", "b"), ("b", "c"), ("c", "a"))), [selections $p$]),
+  (pointer-state(triangle, (("a", "c"), ("b", "a"), ("c", "b"))), [$p^2$]),
+  (pointer-state(triangle, (("a", "b"), ("b", "c"), ("c", "a"))), [$p^4 = p$]),
+))[
+  In a directed graph three subtrees can each choose the next: $a -> b -> c -> a$. No pair
+  is mutual, so nothing becomes a root, and pointer jumping rotates the pointers forever.
+  The number of unresolved subtrees stops falling; the stall is detected and the cycle is
+  grouped on rank 0.
+]
+
+#step([A power-of-two cycle looks like roots], code: cut, focus: (5, 6, 7), states(
+  (pointer-state(square, (("a", "b"), ("b", "c"), ("c", "d"), ("d", "a"))), [selections $p$]),
+  (pointer-state(square, (("a", "c"), ("b", "d"), ("c", "a"), ("d", "b"))), [$p^2$]),
+  (pointer-state(square, (("a", "a"), ("b", "b"), ("c", "c"), ("d", "d"))), [$p^4$: four "roots"]),
+))[
+  On a 4-cycle, two rounds of jumping take every pointer to its own node, and a node
+  pointing at itself is what a root looks like (shaded). Taken as roots, the four
+  subtrees never merge, the next round selects the same edges, and the cluster stays in
+  four pieces. Line 7 is the fix: a subtree that was not a root and whose chain returns to
+  itself is on a cycle and stays unresolved, so the cycle is grouped.
+]
+
+#step([Grouping must link roots], code: cut, focus: (9,), grid(
+  columns: 2,
+  column-gutter: 2.5em,
+  row-gutter: 0.4em,
+  diagram(
+    spacing: 3.4em, node-stroke: 0.6pt, node-shape: circle, node-inset: 3pt,
+    node((0, 0), text(9pt, $r_1$), name: <r1>), node((1, 0), text(9pt, $r_2$), name: <r2>),
+    node((0.5, 0.9), text(9pt, $r_3$), name: <r3>),
+    edge(<r1>, <r2>, "-|>"), edge(<r2>, <r3>, "-|>"),
+    edge(<r3>, <r1>, "-|>", stroke: 0.6pt + red),
   ),
-  caption: [Pointer jumping on a 4-cycle. Every member ends pointing at itself, which is how
-    a root looks (shaded). Taken as roots, the four subtrees never merge, the next round
-    selects the same edges, and Borůvka stops with the cluster in four pieces. With line 7
-    of @alg:cut, a member whose chain returns to itself stays unresolved, and cycle
-    grouping makes one member the root of all (right).],
-) <fig:power-cycle>
-
-#figure(
-  grid(
-    columns: 3,
-    column-gutter: 1fr,
-    state(pointer-state(triangle, (("a", "b"), ("b", "c"), ("c", "a"))), [selections $p$]),
-    state(pointer-state(triangle, (("a", "c"), ("b", "a"), ("c", "b"))), [round 1: $p^2$]),
-    state(pointer-state(triangle, (("a", "b"), ("b", "c"), ("c", "a"))), [round 2: $p^4 = p$]),
+  diagram(
+    spacing: 3.4em, node-stroke: 0.6pt, node-shape: circle, node-inset: 3pt,
+    node((0, 0), text(9pt, $r_1$), name: <s1>), node((1, 0), text(9pt, $r_2$), name: <s2>),
+    node((0.5, 0.9), text(9pt, $r_3$), name: <s3>, fill: rgb("#e3ecf7")),
+    edge(<s1>, <s2>, "-|>"), edge(<s2>, <s3>, "-|>"),
   ),
-  caption: [On a 3-cycle the pointers rotate forever and never reach a node's own id, so
-    the number of unresolved subtrees stalls: this is the case a stall-based check catches
-    (lines 8--9 of @alg:cut). Only cycles whose length is a power of two escape it.],
-) <fig:odd-cycle>
+  text(8pt)[overwriting pointers], text(8pt)[union-find],
+))[
+  Grouping joins subtrees along their pointers. Overwriting one representative's pointer
+  with another's, without first following each to its root, can close a loop among
+  representatives (red), and the pointer jumping after grouping never ends: a run on 5
+  ranks hung this way. A union-find links only roots, so the groups stay trees with one
+  root each (shaded).
+]
 
-The original implementation found the clusters on every rank count except some where the
-selections happened to form a power-of-two cycle; the test that swept random directed
-graphs over 1 to 7 ranks found one such case on 7 ranks.
+#step([Reading past the list], code: local, focus: (13,), diagram(
+  spacing: (2.2em, 3.2em), node-stroke: 0.6pt, node-inset: 4.5pt,
+  node((0, 0), text(9pt, $u_1$), name: <c0>), node((1, 0), text(9pt, $u_2$), name: <c1>),
+  node((2, 0), text(9pt, $u_3$), name: <c2>),
+  node((3, 0), text(8pt, fill: red)[$0$], name: <c3>, stroke: (paint: red, dash: "dashed", thickness: 0.6pt)),
+  node((1.5, -0.55), text(7.5pt)[unresolved subtrees], stroke: none),
+  node((3, -0.55), text(7.5pt, fill: red)[one past the end], stroke: none),
+  node((1.5, 1), text(8pt)[subtree of point 0], name: <z>, fill: rgb("#f6d7d2")),
+  edge(<c0>, <z>, "-|>", stroke: 0.6pt + red), edge(<c1>, <z>, "-|>", stroke: 0.6pt + red),
+  edge(<c2>, <z>, "-|>", stroke: 0.6pt + red),
+  edge(<c3>, <z>, "--|>", stroke: 0.6pt + red, text(7.5pt, fill: red)[read as the target], label-side: left),
+))[
+  The shared-memory grouping read one element past its list of unresolved subtrees. The
+  stray value was usually 0, so it formed no groups and pointed every unresolved subtree
+  at the subtree of point 0, merging them into whatever cluster point 0 was in.
+  AddressSanitizer reported the read. Only multithreaded runs reach this line, because
+  sequential in-place updates collapse cycles on their own.
+]
 
-=== Grouping that creates a cycle
+#step([Distances exactly at $epsilon$], code: one-rank, focus: (1,), image("figures/eps-boundary.svg", width: 100%))[
+  On a unit grid with $epsilon = 1$ and $M = #ex.eps_grid.min_samples$, each interior point
+  has four neighbors at distance exactly $epsilon$. With $<=$, as in @lem:classify and in
+  scikit-learn, interior points are core (blue) and the rest border (gold) or noise. The
+  strict $<$ of the original implementation finds no core point. Grids and rounded
+  distances put many points exactly at $epsilon$.
+]
 
-The subtrees left unresolved are grouped along their pointers (line 13 of @alg:local,
-line 9 of @alg:cut). Merging two groups by overwriting one representative's pointer with
-the other's current representative, without first following each pointer to its root,
-can close a loop among representatives:
+#step([A finite "no edge" weight], code: local, focus: (3,), image("figures/sentinel.svg", width: 100%))[
+  The search for minimum edges starts each subtree at a "no edge yet" weight $s$ and keeps
+  only lighter edges. With a finite $s$, edges of weight $s$ or more (faint red) can never
+  be selected, and clusters fall apart, here into #ex.sentinel_pieces pieces. The original
+  $s = 10^4$ did this to data whose neighbor distances reach $10^4$, such as raw physical
+  units; here $s$ is the 60th percentile of the example's edge weights.
+]
 
-#figure(
-  grid(
-    columns: 2,
-    column-gutter: 4em,
-    state(diagram(
-      spacing: 4em, node-stroke: 0.6pt, node-shape: circle, node-inset: 3pt,
-      node((0, 0), $r_1$, name: <r1>), node((1, 0), $r_2$, name: <r2>), node((0.5, 0.9), $r_3$, name: <r3>),
-      edge(<r1>, <r2>, "-|>"), edge(<r2>, <r3>, "-|>"),
-      edge(<r3>, <r1>, "-|>", stroke: 0.7pt + rgb("#c0392b"), text(8pt, fill: rgb("#c0392b"))[overwritten], label-side: left),
-    ), [overwriting pointers: $r_1 -> r_2 -> r_3 -> r_1$]),
-    state(diagram(
-      spacing: 4em, node-stroke: 0.6pt, node-shape: circle, node-inset: 3pt,
-      node((0, 0), $r_1$, name: <s1>), node((1, 0), $r_2$, name: <s2>), node((0.5, 0.9), $r_3$, name: <s3>, fill: rgb("#e3ecf7")),
-      edge(<s1>, <s2>, "-|>"), edge(<s2>, <s3>, "-|>"),
-    ), [union-find: find both roots, then link root to root]),
-  ),
-  caption: [Grouping. Linking a group to another without finding its root first lets a
-    chain of representatives become a cycle, and the pointer jumping that follows
-    grouping loops forever: the run on 5 ranks that never finished. A union-find links
-    only roots, so the representatives form a tree with a single root (shaded).],
-) <fig:grouping>
+#step([A loop variable shared by threads], code: one-rank, focus: (6,), table(
+  columns: 4,
+  align: (center, left, left, center),
+  table.header[][thread A][thread B][shared $u$],
+  [1], [$u <- R[p]$], [], [$R[p]$],
+  [2], [], [$u <- R[q]$], [$R[q]$],
+  [3], [#text(fill: red)[$R[p] <- "root"(u)$]], [], [$R[q]$],
+))[
+  The loop that gives each core point its cluster used one variable $u$ for all threads.
+  Thread B can overwrite it between thread A's read and A's use, and point $p$ receives
+  the cluster of B's point $q$. Declaring $u$ inside the loop makes it private to each
+  iteration. Sanitized, slower builds hit this timing; ordinary runs rarely did.
+]
 
-A third defect sat in the same place in the shared-memory code: the local grouping read
-one element past its list of unresolved subtrees, formed no groups, and pointed every one
-of them at the subtree of point 0, merging them into whatever cluster point 0 was in.
-AddressSanitizer reported the read; only multithreaded runs reach this code, because
-sequential in-place pointer updates collapse cycles on their own.
-
-=== Distances exactly at $epsilon$
-
-#figure(
-  image("figures/eps_boundary.svg", width: 62%),
-  caption: [A unit grid with $epsilon = 1$ and $M = 5$: each interior point has four
-    neighbors at distance exactly $epsilon$ (dashed circle). (a) With $d <= epsilon$, as
-    in @lem:classify and in scikit-learn, interior points are core and the rest border or
-    noise. (b) With the strict test $d < epsilon$ of the original implementation, no
-    point is core. Data on grids, and integer or rounded distances, put many points
-    exactly at $epsilon$.],
-) <fig:eps>
-
-=== A finite "no edge" weight
-
-#figure(
-  image("figures/sentinel.svg", width: 62%),
-  caption: [The minimum-edge search starts every subtree at a "no edge yet" weight $s$ and
-    keeps only lighter edges (line 3 of @alg:local). With $s = +infinity$ every edge can
-    be selected (a). With a finite $s$, edges of weight $s$ or more (faint red) are never
-    selected, and clusters fall apart into the pieces held together by lighter edges (b).
-    The original $s = 10^4$ did this to any data whose neighbor distances reach $10^4$,
-    for instance in raw physical units; here $s$ is set to the 60th percentile of the
-    example's edge weights to show the same effect at this scale.],
-) <fig:sentinel>
-
-=== Timing: a shared variable and a shared file
-
-Two defects depended only on how threads or ranks were scheduled, which is why they
-appeared under sanitizers (slower, differently timed builds) and on oversubscribed CI
-machines but not in ordinary runs.
-
-#figure(
-  kind: image,
-  grid(
-    columns: 2,
-    column-gutter: 3em,
-    table(
-      columns: 4,
-      align: (center, left, left, center),
-      table.header[][thread A][thread B][shared $u$],
-      [1], [$u <- R[p]$], [], [$R[p]$],
-      [2], [], [$u <- R[q]$], [$R[q]$],
-      [3], [#text(fill: rgb("#c0392b"))[$R[p] <- "root"(u)$]], [], [$R[q]$],
-    ),
-    table(
-      columns: 3,
-      align: (center, left, left),
-      table.header[][rank 0][rank 2 (late)],
-      [1], [open, truncate], [_still computing_],
-      [2], [write $n$ labels], [],
-      [3], [], [#text(fill: rgb("#c0392b"))[open, truncate]],
-    ),
-  ),
-  caption: [Left: the loop that labels core points with their cluster (line 6 of
-    @alg:driver) used one variable $u$ for all threads, so point $p$ could receive the
-    cluster of thread B's point $q$; declaring $u$ inside the loop fixes it. Right: every
-    rank of the command-line program opened, and so emptied, the output file, but only
-    rank 0 wrote it; a rank that reached the open after rank 0 finished left an empty
-    file. Only rank 0 may open it.],
-) <fig:races>
+#step([One writer for the output file], table(
+  columns: 3,
+  align: (center, left, left),
+  table.header[][rank 0][rank 2 (late)],
+  [1], [open, truncate], [_still computing_],
+  [2], [write $n$ labels], [],
+  [3], [], [#text(fill: red)[open, truncate]],
+))[
+  Outside the algorithm, in the command-line program: every rank opened, and so emptied,
+  the labels file, but only rank 0 wrote it. A rank that reached the open after rank 0
+  had finished left an empty file, which happened on oversubscribed CI machines. Only
+  rank 0 may open it.
+]

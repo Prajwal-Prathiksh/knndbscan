@@ -1,13 +1,16 @@
-"""Draw the figures of the report's visual appendix (docs/report/figures/*.svg).
+"""Draw the panels of the report's storyboard appendix (docs/report/figures/*.svg).
 
 Usage (from the repository root): uv run python docs/report/figures/make_figures.py
 
 Every panel is computed, not drawn by hand: the kNN graph and point classes follow the
 paper's definitions, Borůvka's rounds are replayed exactly as the report's Algorithm 1
 states them, and the final clusterings come from the knndbscan library and from
-scikit-learn's DBSCAN. A reproduction that disagrees with the library stops the script.
+scikit-learn's DBSCAN. A replay that disagrees with the library stops the script. The
+numbers the report quotes about the example are written to example.json, which the
+report reads, so text and panels cannot drift apart.
 """
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,13 +31,15 @@ OUT = Path(__file__).resolve().parent
 EPS, MIN_SAMPLES = 0.55, 6
 PALETTE = ["#c0392b", "#e1a800", "#2e7d32", "#1f5fa8", "#6d3b0f", "#ef7d1a", "#6a1b9a",
            "#d81b8a", "#00838f", "#7cb342", "#5c6bc0", "#a1887f", "#f06292", "#26a69a"]  # fmt: skip
-GREY, LIGHT, NOISE = "#9e9e9e", "#d6d6d6", "#bdbdbd"
+CORE, BORDER, DARK, RED = "#1f5fa8", "#e1a800", "#424242", "#c0392b"
+GREY, LIGHT, NOISE = "#8a8a8a", "#d6d6d6", "#bdbdbd"
+RANK_TINTS = ["#e3ecf7", "#fbeedd", "#e6f2e3"]
 
 plt.rcParams.update({
-    "font.family": "DejaVu Sans", "font.size": 8.5, "svg.fonttype": "path",
+    "font.family": "DejaVu Sans", "font.size": 8, "svg.fonttype": "path",
     # A fixed salt and no date make the SVGs identical from run to run.
     "svg.hashsalt": "knndbscan",
-    "axes.linewidth": 0.6, "axes.edgecolor": "#555555",
+    "axes.linewidth": 0.6, "axes.edgecolor": "#777777",
 })  # fmt: skip
 
 
@@ -73,28 +78,33 @@ def build(X: np.ndarray) -> Graph:
     return Graph(X, neighbors, distances.astype(np.float32))
 
 
-def choose_dataset() -> tuple[Graph, np.ndarray, np.ndarray]:
+def choose_dataset() -> tuple[int, Graph, np.ndarray, np.ndarray]:
     """The first seed whose data shows a DBSCAN merge that kNN-DBSCAN keeps apart."""
     for seed in range(500):
         graph = build(make_data(seed))
         ours = knn_dbscan_from_graph(graph.neighbors, graph.distances, EPS, MIN_SAMPLES)
         theirs = DBSCAN(eps=EPS, min_samples=MIN_SAMPLES).fit_predict(graph.X)
-        n_ours, n_theirs = ours.max() + 1, theirs.max() + 1
         border = (~graph.core & (ours >= 0)).sum()
-        if n_ours == 3 and n_theirs == 2 and border >= 4 and (ours == -1).sum() >= 5:
-            print(
-                f"seed {seed}: kNN-DBSCAN {n_ours} clusters, DBSCAN {n_theirs}, {border} border"
-            )
-            return graph, ours, theirs
+        if (
+            ours.max() == 2
+            and theirs.max() == 1
+            and border >= 4
+            and (ours == -1).sum() >= 5
+        ):
+            return seed, graph, ours, theirs
     raise SystemExit("no seed shows the DBSCAN/kNN-DBSCAN difference")
 
 
 def boruvka_rounds(graph: Graph) -> list[dict]:
-    """Replay Algorithm 1 (local Borůvka) and record each round's selections and labels."""
+    """Replay Algorithm 1 (local Borůvka); record each round's labels, selections and forest.
+
+    A round's entry holds the subtrees at its start, the edges it selects (with whether the
+    two subtrees chose each other) and the forest of all edges selected before it.
+    """
     core = graph.core
-    members = np.flatnonzero(core)
-    R = {int(i): int(i) for i in members}
+    R = {int(i): int(i) for i in np.flatnonzero(core)}
     L = dict.fromkeys(R, 0)
+    forest: list[tuple[int, int]] = []
     rounds = []
     while True:
         best: dict[
@@ -110,6 +120,7 @@ def boruvka_rounds(graph: Graph) -> list[dict]:
                 L[i] += 1
         subtrees = set(R.values())
         p = {u: (R[best[u][2]] if u in best else u) for u in subtrees}
+        mutual = {u for u in best if p[p[u]] == u}
         for u in subtrees:  # break symmetry between mutual pairs
             if p[p[u]] == u and u < p[u]:
                 p[u] = u
@@ -118,30 +129,31 @@ def boruvka_rounds(graph: Graph) -> list[dict]:
             if jumped == p:
                 break
             p = jumped
-        rounds.append(
-            {"labels": dict(R), "selected": [(b[1], b[2]) for b in best.values()]}
-        )
+        selected = [(i, q, u in mutual) for u, (_, i, q) in best.items()]
+        rounds.append({"labels": dict(R), "selected": selected, "forest": list(forest)})
+        forest += [(i, q) for i, q, _ in selected]
         R = {i: p[R[i]] for i in R}
         if len(set(R.values())) == len(subtrees):
-            rounds.append({"labels": dict(R), "selected": []})
+            rounds.append({"labels": dict(R), "selected": [], "forest": list(forest)})
             return rounds
 
 
-def colours_for(
-    labels: dict[int, int], reference: dict[int, int] | None = None
-) -> dict:
-    """A colour per subtree; with `reference`, a subtree takes the colour of its final cluster."""
+def components(n: int, edges: list[tuple[int, int]]) -> np.ndarray:
+    rows, cols = (np.array([e[k] for e in edges], dtype=int) for k in (0, 1))
+    graph = coo_matrix((np.ones(len(edges)), (rows, cols)), shape=(n, n))
+    return connected_components(graph, directed=True, connection="weak")[1]
+
+
+def by_first_member(labels: dict[int, int]) -> dict[int, int]:
+    """Number subtrees 0, 1, ... in order of their lowest point, as the library numbers clusters."""
     roots = sorted(
         set(labels.values()), key=lambda r: min(i for i, s in labels.items() if s == r)
     )
-    return {r: PALETTE[k % len(PALETTE)] for k, r in enumerate(roots)}
+    return {r: k for k, r in enumerate(roots)}
 
 
-def panel(ax, title: str) -> None:
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_aspect("equal")
-    ax.set_title(title, fontsize=8.5, loc="left", pad=4)
+def cluster_colours(labels: np.ndarray) -> list[str]:
+    return [PALETTE[label % len(PALETTE)] if label >= 0 else NOISE for label in labels]
 
 
 def draw_edges(
@@ -156,149 +168,164 @@ def draw_edges(
             ax.plot(*X[[i, j]].T, color=colour, lw=width, zorder=zorder, alpha=alpha)
 
 
-def cluster_colours(labels: np.ndarray) -> list[str]:
-    return [PALETTE[label % len(PALETTE)] if label >= 0 else NOISE for label in labels]
+def save(name: str, draw, X: np.ndarray, size=(3.0, 3.0), background=None) -> None:
+    """Draw one storyboard panel: square, no ticks, the example's bounds."""
+    fig, ax = plt.subplots(figsize=size)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect("equal")
+    ax.set_xlim(X[:, 0].min() - 0.3, X[:, 0].max() + 0.3)
+    ax.set_ylim(X[:, 1].min() - 0.3, X[:, 1].max() + 0.3)
+    if background:
+        background(ax)
+    draw(ax)
+    fig.tight_layout(pad=0.2)
+    fig.savefig(OUT / f"{name}.svg", bbox_inches="tight", metadata={"Date": None})
+    plt.close(fig)
 
 
-def figure_pipeline(graph: Graph, ours: np.ndarray, theirs: np.ndarray) -> None:
+def legend(ax, loc="upper left") -> None:
+    ax.legend(
+        loc=loc, fontsize=6.5, frameon=False, handletextpad=0.2, borderaxespad=0.3
+    )
+
+
+def story_definitions(graph: Graph, ours: np.ndarray, theirs: np.ndarray) -> dict:
+    """Panels for Algorithm 2 on one rank: graph, core points, components, labels, DBSCAN."""
     X, core = graph.X, graph.core
-    fig, axes = plt.subplots(1, 4, figsize=(10.2, 2.9))
+    border = ~core & (ours >= 0)
+    noise = ours == -1
     directed = [
         (i, int(j))
         for i in range(len(X))
         for j in graph.neighbors[i, : MIN_SAMPLES - 1]
     ]
 
-    ax = axes[0]
-    panel(ax, r"(a) kNN graph: $M - 1 = 5$ out-edges")
-    draw_edges(ax, X, directed, colour="#b0b0b0", width=0.45, arrows=True, alpha=0.8)
-    ax.scatter(*X.T, s=9, c="#424242", zorder=3)
-
-    ax = axes[1]
-    panel(ax, "(b) core, border and noise")
-    border = ~core & (ours >= 0)
-    examples = [
-        np.flatnonzero(core)[5],
-        np.flatnonzero(border)[0],
-        np.flatnonzero(ours == -1)[0],
-    ]
-    for i, colour in zip(examples, ["#1f5fa8", "#e1a800", "#757575"], strict=True):
-        ax.add_patch(
-            Circle(X[i], EPS, fill=False, ls="--", lw=0.7, color=colour, zorder=2)
+    def knn_graph(ax):
+        draw_edges(
+            ax, X, directed, colour="#a8a8a8", width=0.45, arrows=True, alpha=0.85
         )
-    ax.scatter(*X[core].T, s=12, c="#1f5fa8", zorder=3, label="core")
-    ax.scatter(
-        *X[border].T,
-        s=14,
-        c="#e1a800",
-        edgecolors="#6d4c00",
-        lw=0.5,
-        zorder=3,
-        label="border",
-    )
-    ax.scatter(*X[ours == -1].T, s=14, marker="x", c="#757575", zorder=3, label="noise")
-    ax.legend(
-        loc="upper left",
-        fontsize=6.5,
-        frameon=False,
-        handletextpad=0.2,
-        borderaxespad=0.2,
-    )
+        ax.scatter(*X.T, s=9, c=DARK, zorder=3)
 
-    ax = axes[2]
-    panel(ax, r"(c) $G_{M,\mathrm{core}}$ and its components")
+    # One core and one non-core point, with their eps-disks: the disk of a core point holds
+    # at least M points (itself included), the other's does not.
+    a_core, a_noise = np.flatnonzero(core)[5], np.flatnonzero(noise)[0]
+
+    def core_points(ax):
+        for i, colour in [(a_core, CORE), (a_noise, "#757575")]:
+            ax.add_patch(
+                Circle(X[i], EPS, fill=False, ls="--", lw=0.7, color=colour, zorder=2)
+            )
+        ax.scatter(*X[core].T, s=12, c=CORE, zorder=3, label="core")
+        ax.scatter(*X[~core].T, s=10, c=NOISE, zorder=3, label="not core")
+        legend(ax)
+
     edges = graph.core_edges()
-    draw_edges(ax, X, edges, colour="#7f7f7f", width=0.7)
-    ax.scatter(*X[~core].T, s=6, c=LIGHT, zorder=2)
-    ax.scatter(
-        *X[core].T,
-        s=13,
-        c=[cluster_colours(ours)[i] for i in np.flatnonzero(core)],
-        zorder=3,
-    )
 
-    ax = axes[3]
-    panel(ax, "(d) DBSCAN joins two of them")
+    def core_components(ax):
+        draw_edges(ax, X, edges, colour=GREY, width=0.7)
+        ax.scatter(*X[~core].T, s=6, c=LIGHT, zorder=2)
+        idx = np.flatnonzero(core)
+        ax.scatter(*X[idx].T, s=13, c=[cluster_colours(ours)[i] for i in idx], zorder=3)
+
+    # A border point, joined to the core neighbor whose cluster it takes.
+    b = np.flatnonzero(border)[0]
+    q = next(int(j) for j in graph.neighbors[b] if core[j])
+
+    def labels(ax):
+        colours = cluster_colours(ours)
+        ax.add_patch(
+            Circle(X[b], EPS, fill=False, ls="--", lw=0.7, color=BORDER, zorder=2)
+        )
+        ax.plot(*X[[b, q]].T, color=DARK, lw=1.0, zorder=2)
+        idx = np.flatnonzero(core)
+        ax.scatter(*X[idx].T, s=12, c=[colours[i] for i in idx], zorder=3)
+        idx = np.flatnonzero(border)
+        ax.scatter(*X[idx].T, s=22, c=[colours[i] for i in idx], edgecolors=DARK, lw=0.8,
+                   zorder=4, label="border")  # fmt: skip
+        ax.scatter(
+            *X[noise].T, s=16, marker="x", c="#757575", zorder=3, label="noise (−1)"
+        )
+        legend(ax)
+
+    # Give each DBSCAN cluster the colour of the kNN-DBSCAN cluster it mostly contains.
     matched = np.full_like(theirs, -1)
     for cluster in np.unique(theirs[theirs >= 0]):
-        inside = ours[(theirs == cluster) & (ours >= 0)]
-        matched[theirs == cluster] = np.bincount(inside).argmax()
-    ax.scatter(*X.T, s=13, c=cluster_colours(matched), zorder=3)
-    pairs = [(i, j) for i in np.flatnonzero(core) for j in np.flatnonzero(core)
-             if i < j and ours[i] != ours[j] and np.linalg.norm(X[i] - X[j]) <= EPS]  # fmt: skip
-    draw_edges(ax, X, pairs, colour="#c0392b", width=1.4, zorder=2)
-    for axis in axes:
-        axis.set_xlim(X[:, 0].min() - 0.35, X[:, 0].max() + 0.35)
-        axis.set_ylim(X[:, 1].min() - 0.35, X[:, 1].max() + 0.35)
-    fig.tight_layout(w_pad=0.6)
-    fig.savefig(OUT / "pipeline.svg", bbox_inches="tight", metadata={"Date": None})
+        matched[theirs == cluster] = np.bincount(
+            ours[(theirs == cluster) & (ours >= 0)]
+        ).argmax()
+    bridges = [(i, j) for i in np.flatnonzero(core) for j in np.flatnonzero(core)
+               if i < j and ours[i] != ours[j] and np.linalg.norm(X[i] - X[j]) <= EPS]  # fmt: skip
+
+    def dbscan(ax):
+        ax.scatter(*X.T, s=13, c=cluster_colours(matched), zorder=3)
+        draw_edges(ax, X, bridges, colour=RED, width=1.5, zorder=2)
+
+    for name, draw in [("knn-graph", knn_graph), ("core-points", core_points),
+                       ("components", core_components), ("labels", labels), ("dbscan", dbscan)]:  # fmt: skip
+        save(name, draw, X)
+    return {
+        "n_points": len(X), "n_core": int(core.sum()), "n_border": int(border.sum()),
+        "n_noise": int(noise.sum()), "n_clusters": int(ours.max() + 1),
+        "n_dbscan_clusters": int(theirs.max() + 1), "n_bridges": len(bridges),
+    }  # fmt: skip
 
 
-def figure_boruvka(graph: Graph, ours: np.ndarray) -> None:
+def story_boruvka(graph: Graph, ours: np.ndarray) -> dict:
+    """Panels for Algorithm 1: the selections of each round on the subtrees they start from."""
+    X, core = graph.X, graph.core
     rounds = boruvka_rounds(graph)
     final = rounds[-1]["labels"]
-    final_ids = {r: k for k, r in enumerate(sorted(set(final.values()), key=lambda r: min(
-        i for i, s in final.items() if s == r)))}  # fmt: skip
-    # The replay must find exactly the library's clusters.
-    replay = np.full(len(graph.X), -1)
-    for i, r in final.items():
-        replay[i] = final_ids[r]
-    core = graph.core
+    ids = by_first_member(final)
+    replay = np.array([ids[final[i]] if i in final else -1 for i in range(len(X))])
     assert np.array_equal(replay[core], ours[core]), (
         "the Borůvka replay disagrees with the library"
     )
+    edges = graph.core_edges()
 
-    shown = rounds[:3] + [rounds[-1]]
-    fig, axes = plt.subplots(1, len(shown), figsize=(10.2, 2.9))
-    X = graph.X
-    for k, (ax, state) in enumerate(zip(axes, shown, strict=True)):
-        labels = state["labels"]
-        colours = colours_for(labels)
-        n = len(set(labels.values()))
-        title = (
-            f"(d) end: {n} subtrees"
-            if k == len(shown) - 1
-            else f"({'abc'[k]}) round {k + 1}: {n} subtrees"
-        )
-        panel(ax, title)
-        draw_edges(ax, X, graph.core_edges(), colour="#ececec", width=0.5)
-        same = [(i, j) for i, j in graph.core_edges() if labels[i] == labels[j]]
-        for i, j in same:
-            ax.plot(
-                *X[[i, j]].T, color=colours[labels[i]], lw=1.1, alpha=0.55, zorder=1
-            )
-        for i, j in state["selected"]:
-            ax.add_patch(FancyArrowPatch(X[i], X[j], arrowstyle="-|>", mutation_scale=8, color="#212121",
-                                         lw=0.9, shrinkA=2.5, shrinkB=2.5, zorder=4))  # fmt: skip
-        idx = np.array(sorted(labels))
-        ax.scatter(
-            *X[idx].T,
-            s=15,
-            c=[colours[labels[i]] for i in idx],
-            edgecolors="white",
-            lw=0.3,
-            zorder=3,
-        )
-        ax.scatter(*X[~core].T, s=5, c=LIGHT, zorder=2)
-        ax.set_xlim(X[:, 0].min() - 0.35, X[:, 0].max() + 0.35)
-        ax.set_ylim(X[:, 1].min() - 0.35, X[:, 1].max() + 0.35)
-    fig.tight_layout(w_pad=0.6)
-    fig.savefig(OUT / "boruvka.svg", bbox_inches="tight", metadata={"Date": None})
-    print("Borůvka rounds:", [len(set(r["labels"].values())) for r in rounds])
+    def state(k: int, arrows: bool):
+        labels, forest = rounds[k]["labels"], rounds[k]["forest"]
+        # Single points are dark, so that the first round is not a confetti of colours.
+        sizes = {r: list(labels.values()).count(r) for r in set(labels.values())}
+        order = by_first_member(labels)
+        colour = {
+            r: (DARK if sizes[r] == 1 else PALETTE[order[r] % len(PALETTE)])
+            for r in sizes
+        }
 
+        def draw(ax):
+            draw_edges(ax, X, edges, colour="#ececec", width=0.5)
+            for i, j in forest:
+                ax.plot(
+                    *X[[i, j]].T, color=colour[labels[i]], lw=1.4, alpha=0.75, zorder=2
+                )
+            if arrows:
+                for i, j, mutual in rounds[k]["selected"]:
+                    ax.add_patch(FancyArrowPatch(X[i], X[j], arrowstyle="-|>", mutation_scale=8,
+                                                 color=RED if mutual else "#212121", lw=0.9,
+                                                 shrinkA=2.5, shrinkB=2.5, zorder=4))  # fmt: skip
+            idx = np.array(sorted(labels))
+            ax.scatter(*X[idx].T, s=15, c=[colour[labels[i]] for i in idx], edgecolors="white",
+                       lw=0.3, zorder=3)  # fmt: skip
+            ax.scatter(*X[~core].T, s=5, c=LIGHT, zorder=1)
 
-def limits(ax, X, pad=0.35) -> None:
-    ax.set_xlim(X[:, 0].min() - pad, X[:, 0].max() + pad)
-    ax.set_ylim(X[:, 1].min() - pad, X[:, 1].max() + pad)
+        return draw
+
+    for k in range(3):
+        save(f"boruvka-{k + 1}", state(k, arrows=True), X)
+    save("boruvka-merged-1", state(1, arrows=False), X)
+    save("boruvka-end", state(len(rounds) - 1, arrows=False), X)
+    counts = [len(set(r["labels"].values())) for r in rounds]
+    return {
+        "rounds": counts[
+            :-1
+        ],  # subtrees at the start of each round that merged something
+        "mutual": [sum(m for *_, m in r["selected"]) // 2 for r in rounds[:3]],
+    }
 
 
-def components(n: int, edges: list[tuple[int, int]]) -> np.ndarray:
-    rows, cols = (np.array([e[k] for e in edges], dtype=int) for k in (0, 1))
-    graph = coo_matrix((np.ones(len(edges)), (rows, cols)), shape=(n, n))
-    return connected_components(graph, directed=True, connection="weak")[1]
-
-
-def figure_distributed(graph: Graph, ours: np.ndarray, n_ranks: int = 3) -> None:
+def story_distributed(graph: Graph, ours: np.ndarray, n_ranks: int = 3) -> dict:
+    """Panels for Algorithm 2 on several ranks: blocks, local subtrees, super-vertices, clusters."""
     # Number the points left to right, so that each rank's contiguous block is a vertical strip.
     order = np.argsort(graph.X[:, 0])
     position = np.argsort(order)
@@ -306,195 +333,173 @@ def figure_distributed(graph: Graph, ours: np.ndarray, n_ranks: int = 3) -> None
     neighbors = position[graph.neighbors[order]]
     core = graph.core[order]
     final = ours[order]
-    n0 = -(-len(X) // n_ranks)
-    rank = np.arange(len(X)) // n0
-    edges = [
-        (i, int(j))
-        for i in np.flatnonzero(core)
-        for j in neighbors[i, : MIN_SAMPLES - 1]
-        if core[j]
-    ]
+    rank = np.arange(len(X)) // -(-len(X) // n_ranks)
+    edges = [(i, int(j)) for i in np.flatnonzero(core)
+             for j in neighbors[i, : MIN_SAMPLES - 1] if core[j]]  # fmt: skip
     local = [(i, j) for i, j in edges if rank[i] == rank[j]]
     cut = [(i, j) for i, j in edges if rank[i] != rank[j]]
-    subtree = components(len(X), local)  # stage II: local components = local subtrees
+    subtree = components(
+        len(X), local
+    )  # stage II: local components are the local subtrees
     core_ids = np.flatnonzero(core)
     subtree_ids = sorted({int(subtree[i]) for i in core_ids})
     colour_of = {s: PALETTE[k % len(PALETTE)] for k, s in enumerate(subtree_ids)}
 
-    # Stage V: components of the graph of subtrees joined by cut edges are the clusters.
+    # Theorem 3.6: the components of the subtrees joined by cut edges are the clusters.
     index = {s: k for k, s in enumerate(subtree_ids)}
-    contracted = components(
-        len(subtree_ids),
-        [(index[int(subtree[i])], index[int(subtree[j])]) for i, j in cut],
-    )
-    merged = np.full(len(X), -1)
-    for i in core_ids:
-        merged[i] = contracted[index[int(subtree[i])]]
-    pairs = set(zip(merged[core], final[core], strict=True))
-    assert len(pairs) == len(set(final[core])) == len(set(merged[core])), (
-        "Theorem 3.6 check failed"
+    contracted = components(len(subtree_ids), [(index[int(subtree[i])], index[int(subtree[j])])
+                                                for i, j in cut])  # fmt: skip
+    merged = {int(i): int(contracted[index[int(subtree[i])]]) for i in core_ids}
+    pairs = {(merged[i], int(final[i])) for i in core_ids}
+    assert len(pairs) == len(set(final[core])) == len(set(merged.values())), (
+        "Theorem 3.6 failed"
     )
 
-    fig, axes = plt.subplots(1, 4, figsize=(10.2, 2.9))
-    bounds = [X[rank == r, 0].max() for r in range(n_ranks - 1)]
-    tints = ["#e3ecf7", "#fbeedd", "#e6f2e3"]
-    for ax in axes:
+    lows = [X[rank == r, 0].min() for r in range(n_ranks)]
+    highs = [X[rank == r, 0].max() for r in range(n_ranks)]
+
+    def strips(ax):
         for r in range(n_ranks):
-            lo = (
-                X[:, 0].min() - 0.35
-                if r == 0
-                else (bounds[r - 1] + X[rank == r, 0].min()) / 2
-            )
+            lo = X[:, 0].min() - 0.3 if r == 0 else (highs[r - 1] + lows[r]) / 2
             hi = (
-                X[:, 0].max() + 0.35
+                X[:, 0].max() + 0.3
                 if r == n_ranks - 1
-                else (bounds[r] + X[rank == r + 1, 0].min()) / 2
+                else (highs[r] + lows[r + 1]) / 2
             )
-            ax.axvspan(lo, hi, color=tints[r], zorder=0, lw=0)
-        limits(ax, X)
+            ax.axvspan(lo, hi, color=RANK_TINTS[r], zorder=0, lw=0)
+            # Above the frame, where no point can cover it.
+            ax.text((lo + hi) / 2, 1.015, f"rank {r}", ha="center", va="bottom", fontsize=7,
+                    color="#555555", transform=ax.get_xaxis_transform())  # fmt: skip
 
-    ax = axes[0]
-    panel(ax, "(a) 3 ranks; cut edges in red")
-    draw_edges(ax, X, local, colour="#8a8a8a", width=0.6)
-    draw_edges(ax, X, cut, colour="#c0392b", width=1.1)
-    ax.scatter(*X[core].T, s=11, c="#424242", zorder=3)
-    ax.scatter(*X[~core].T, s=5, c=NOISE, zorder=2)
-    for r in range(n_ranks):
-        ax.text(
-            X[rank == r, 0].mean(),
-            X[:, 1].max() + 0.12,
-            f"rank {r}",
-            ha="center",
-            fontsize=7,
-            color="#555555",
-        )
+    def blocks(ax):
+        draw_edges(ax, X, local, colour=GREY, width=0.6)
+        draw_edges(ax, X, cut, colour=RED, width=1.1)
+        ax.scatter(*X[core].T, s=11, c=DARK, zorder=3)
+        ax.scatter(*X[~core].T, s=5, c=NOISE, zorder=2)
 
-    ax = axes[1]
-    panel(ax, f"(b) local MSTs: {len(subtree_ids)} subtrees")
-    for i, j in local:
-        ax.plot(
-            *X[[i, j]].T, color=colour_of[int(subtree[i])], lw=1.1, alpha=0.7, zorder=1
-        )
-    draw_edges(ax, X, cut, colour="#c0392b", width=0.7, alpha=0.6)
-    ax.scatter(
-        *X[core_ids].T, s=12, c=[colour_of[int(subtree[i])] for i in core_ids], zorder=3
-    )
-
-    ax = axes[2]
-    panel(ax, "(c) subtrees as super-vertices")
-    centre = {
-        s: X[[i for i in core_ids if subtree[i] == s]].mean(axis=0) for s in subtree_ids
-    }
-    size = {s: sum(1 for i in core_ids if subtree[i] == s) for s in subtree_ids}
-    links = {tuple(sorted((int(subtree[i]), int(subtree[j])))) for i, j in cut}
-    for a, b in links:
-        ax.plot(*np.array([centre[a], centre[b]]).T, color="#c0392b", lw=1.2, zorder=1)
-    for s in subtree_ids:
+    def local_subtrees(ax):
+        for i, j in local:
+            ax.plot(
+                *X[[i, j]].T,
+                color=colour_of[int(subtree[i])],
+                lw=1.2,
+                alpha=0.75,
+                zorder=1,
+            )
+        draw_edges(ax, X, cut, colour=RED, width=0.7, alpha=0.5)
         ax.scatter(
-            *centre[s],
-            s=18 + 6 * size[s],
-            c=colour_of[s],
-            edgecolors="#333333",
-            lw=0.5,
+            *X[core_ids].T,
+            s=12,
+            c=[colour_of[int(subtree[i])] for i in core_ids],
             zorder=3,
         )
 
-    ax = axes[3]
-    panel(ax, "(d) cut MST: the clusters")
-    ax.scatter(*X.T, s=13, c=cluster_colours(final), zorder=3)
-    fig.tight_layout(w_pad=0.6)
-    fig.savefig(OUT / "distributed.svg", bbox_inches="tight", metadata={"Date": None})
-    print(
-        f"distributed: {len(subtree_ids)} subtrees, {len(cut)} cut edges, {len(links)} subtree links"
-    )
+    centre = {
+        s: X[[i for i in core_ids if subtree[i] == s]].mean(axis=0) for s in subtree_ids
+    }
+    size = {s: int(sum(subtree[i] == s for i in core_ids)) for s in subtree_ids}
+    links = {tuple(sorted((int(subtree[i]), int(subtree[j])))) for i, j in cut}
+
+    def super_vertices(ax):
+        for a, b in links:
+            ax.plot(*np.array([centre[a], centre[b]]).T, color=RED, lw=1.3, zorder=1)
+        for s in subtree_ids:
+            ax.scatter(*centre[s], s=18 + 6 * size[s], c=colour_of[s], edgecolors="#333333",
+                       lw=0.5, zorder=3)  # fmt: skip
+
+    def clusters(ax):
+        ax.scatter(*X.T, s=13, c=cluster_colours(final), zorder=3)
+
+    for name, draw in [("ranks", blocks), ("local-subtrees", local_subtrees),
+                       ("super-vertices", super_vertices), ("rank-clusters", clusters)]:  # fmt: skip
+        save(name, draw, X, background=strips)
+    return {"n_ranks": n_ranks, "n_local_subtrees": len(subtree_ids), "n_cut_edges": len(cut),
+            "n_links": len(links)}  # fmt: skip
 
 
-def figure_eps_boundary() -> None:
-    side = 6
+def panel_pair(name: str, draw_left, draw_right, titles, X, size=(3.3, 1.8)) -> None:
+    """Two panels side by side, for a correct and a defective variant of one step."""
+    fig, axes = plt.subplots(1, 2, figsize=size)
+    for ax, draw, title in zip(axes, (draw_left, draw_right), titles, strict=True):
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_aspect("equal")
+        ax.set_title(title, fontsize=8.5, loc="left", pad=3)
+        draw(ax)
+        ax.set_xlim(X[:, 0].min() - 0.5, X[:, 0].max() + 0.5)
+        ax.set_ylim(X[:, 1].min() - 0.5, X[:, 1].max() + 0.5)
+    fig.tight_layout(pad=0.2, w_pad=0.8)
+    fig.savefig(OUT / f"{name}.svg", bbox_inches="tight", metadata={"Date": None})
+    plt.close(fig)
+
+
+def eps_boundary() -> dict:
+    """A unit grid, where every interior point has four neighbors at exactly eps = 1."""
+    side, m = 6, 5
     X = np.array([(x, y) for y in range(side) for x in range(side)], dtype=float)
-    distances, neighbors = NearestNeighbors(n_neighbors=4).fit(X).kneighbors()
-    fig, axes = plt.subplots(1, 2, figsize=(5.6, 2.9))
-    for ax, strict in zip(axes, [False, True], strict=True):
-        eps = np.nextafter(np.float32(1), np.float32(0)) if strict else 1.0
-        labels = knn_dbscan_from_graph(neighbors, distances, float(eps), 5)
-        core = distances[:, 3] <= np.float32(eps)
-        panel(
-            ax,
-            r"(b) $d < \varepsilon$: no core points"
-            if strict
-            else r"(a) $d \leq \varepsilon$: core in the interior",
+    distances, neighbors = NearestNeighbors(n_neighbors=m - 1).fit(X).kneighbors()
+    distances = distances.astype(np.float32)
+
+    def variant(strict: bool):
+        eps = float(np.nextafter(np.float32(1), np.float32(0))) if strict else 1.0
+        labels = knn_dbscan_from_graph(neighbors, distances, eps, m)
+        kinds = np.where(
+            distances[:, m - 2] <= np.float32(eps), 0, np.where(labels >= 0, 1, 2)
         )
-        centre = 2 * side + 2
-        ax.add_patch(
-            Circle(X[centre], 1.0, fill=False, ls="--", lw=0.8, color="#1f5fa8")
-        )
-        kinds = np.where(core, 0, np.where(labels >= 0, 1, 2))
-        for kind, (colour, marker, label) in enumerate(
-            [
-                ("#1f5fa8", "o", "core"),
-                ("#e1a800", "o", "border"),
-                ("#757575", "x", "noise"),
-            ]
-        ):
-            ax.scatter(
-                *X[kinds == kind].T,
-                s=22,
-                c=colour,
-                marker=marker,
-                label=label,
-                zorder=3,
+
+        def draw(ax):
+            ax.add_patch(
+                Circle(X[2 * side + 2], 1.0, fill=False, ls="--", lw=0.8, color=CORE)
             )
-        ax.set_xlim(-0.6, side - 0.4)
-        ax.set_ylim(-0.6, side - 0.4)
-    axes[0].legend(
-        loc="upper center",
-        bbox_to_anchor=(1.1, -0.04),
-        ncol=3,
-        fontsize=7,
-        frameon=False,
-    )
-    fig.tight_layout(w_pad=1.2)
-    fig.savefig(OUT / "eps_boundary.svg", bbox_inches="tight", metadata={"Date": None})
+            for kind, (colour, marker) in enumerate(
+                [(CORE, "o"), (BORDER, "o"), ("#757575", "x")]
+            ):
+                ax.scatter(*X[kinds == kind].T, s=16, c=colour, marker=marker, zorder=3)
+
+        return draw
+
+    panel_pair("eps-boundary", variant(False), variant(True),
+               [r"$d \leq \varepsilon$", r"$d < \varepsilon$"], X)  # fmt: skip
+    return {"side": side, "min_samples": m}
 
 
-def figure_sentinel(graph: Graph, ours: np.ndarray) -> None:
+def sentinel(graph: Graph, ours: np.ndarray) -> dict:
+    """Clusters when the no-edge weight is finite: edges at or above it are never selected."""
     X, core = graph.X, graph.core
     edges = graph.core_edges()
     weights = np.array([np.linalg.norm(X[i] - X[j]) for i, j in edges])
-    sentinel = float(np.quantile(weights, 0.6))
-    kept = [e for e, w in zip(edges, weights, strict=True) if w < sentinel]
-    fragments = components(len(X), kept)
-    fragment_ids = sorted({int(fragments[i]) for i in np.flatnonzero(core)})
-    colour_of = {s: PALETTE[k % len(PALETTE)] for k, s in enumerate(fragment_ids)}
-    fig, axes = plt.subplots(1, 2, figsize=(5.6, 2.9))
-    panel(axes[0], "(a) infinite sentinel: 3 clusters")
-    draw_edges(axes[0], X, edges, colour="#8a8a8a", width=0.6)
-    axes[0].scatter(*X.T, s=12, c=cluster_colours(ours), zorder=3)
-    panel(axes[1], f"(b) finite sentinel: {len(fragment_ids)} pieces")
-    draw_edges(axes[1], X, kept, colour="#8a8a8a", width=0.6)
-    dropped = [e for e, w in zip(edges, weights, strict=True) if w >= sentinel]
-    draw_edges(axes[1], X, dropped, colour="#c0392b", width=0.5, alpha=0.35)
-    axes[1].scatter(
-        *X[core].T,
-        s=12,
-        c=[colour_of[int(fragments[i])] for i in np.flatnonzero(core)],
-        zorder=3,
-    )
-    axes[1].scatter(*X[~core].T, s=5, c=NOISE, zorder=2)
-    for ax in axes:
-        limits(ax, X)
-    fig.tight_layout(w_pad=1.2)
-    fig.savefig(OUT / "sentinel.svg", bbox_inches="tight", metadata={"Date": None})
-    print(f"sentinel: {len(fragment_ids)} pieces")
+    cutoff = float(np.quantile(weights, 0.6))
+    kept = [e for e, w in zip(edges, weights, strict=True) if w < cutoff]
+    dropped = [e for e, w in zip(edges, weights, strict=True) if w >= cutoff]
+    pieces = components(len(X), kept)
+    piece_ids = sorted({int(pieces[i]) for i in np.flatnonzero(core)})
+    colour_of = {s: PALETTE[k % len(PALETTE)] for k, s in enumerate(piece_ids)}
+
+    def infinite(ax):
+        draw_edges(ax, X, edges, colour=GREY, width=0.5)
+        ax.scatter(*X.T, s=7, c=cluster_colours(ours), zorder=3)
+
+    def finite(ax):
+        draw_edges(ax, X, kept, colour=GREY, width=0.5)
+        draw_edges(ax, X, dropped, colour=RED, width=0.5, alpha=0.35)
+        idx = np.flatnonzero(core)
+        ax.scatter(*X[idx].T, s=7, c=[colour_of[int(pieces[i])] for i in idx], zorder=3)
+        ax.scatter(*X[~core].T, s=4, c=NOISE, zorder=2)
+
+    panel_pair("sentinel", infinite, finite, [r"$s = +\infty$", r"finite $s$"], X)
+    return {"sentinel_pieces": len(piece_ids)}
 
 
 def main() -> None:
-    graph, ours, theirs = choose_dataset()
-    figure_pipeline(graph, ours, theirs)
-    figure_boruvka(graph, ours)
-    figure_distributed(graph, ours)
-    figure_eps_boundary()
-    figure_sentinel(graph, ours)
+    seed, graph, ours, theirs = choose_dataset()
+    numbers = {"seed": seed, "eps": EPS, "min_samples": MIN_SAMPLES}
+    numbers |= story_definitions(graph, ours, theirs)
+    numbers |= story_boruvka(graph, ours)
+    numbers |= story_distributed(graph, ours)
+    numbers |= {"eps_grid": eps_boundary()}
+    numbers |= sentinel(graph, ours)
+    (OUT / "example.json").write_text(json.dumps(numbers, indent=2) + "\n")
+    print(json.dumps(numbers))
 
 
 if __name__ == "__main__":
