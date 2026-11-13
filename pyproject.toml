@@ -98,7 +98,8 @@ environment = { MACOSX_DEPLOYMENT_TARGET = "26.0", OpenMP_ROOT = "$(brew --prefi
 # with clang-cl and the OpenMP runtime of the LLVM installed on GitHub's Windows runners,
 # inside the Visual Studio developer shell CI sets up. delvewheel bundles libomp.dll;
 # --analyze-existing makes it inspect knndbscan.dll, a plain DLL rather than an extension.
-archs = ["AMD64"]
+# Each runner builds its own architecture: AMD64 on windows-latest, ARM64 on windows-11-arm.
+archs = ["native"]
 environment = { CC = "clang-cl", CXX = "clang-cl", CMAKE_GENERATOR = "Ninja", OpenMP_ROOT = "C:/Program Files/LLVM" }
 before-build = "pip install delvewheel"
 repair-wheel-command = 'delvewheel repair --analyze-existing --add-path "C:/Program Files/LLVM/bin" -w {dest_dir} {wheel}'

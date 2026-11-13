@@ -59,13 +59,16 @@ jobs:
         # single-architecture). The runners' macOS version must match
         # MACOSX_DEPLOYMENT_TARGET in [tool.cibuildwheel.macos], the oldest macOS the
         # wheels support. Windows builds with clang-cl ([tool.cibuildwheel.windows]).
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-26, macos-26-intel, windows-latest]
+        os:
+          [ubuntu-latest, ubuntu-24.04-arm, macos-26, macos-26-intel, windows-latest, windows-11-arm]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
       # clang-cl and the linker find the Windows SDK and runtime libraries through it.
       - if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1.13.0
+        with:
+          arch: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
       # Builds in a manylinux_2_28 container (Linux) and tests each wheel after repair.
       - run: uvx cibuildwheel==4.3.5 --output-dir wheelhouse
       - uses: actions/upload-artifact@v7
@@ -86,28 +89,52 @@ jobs:
           path: dist/*.tar.gz
 
   # cibuildwheel tests each wheel on the Python it builds with; these test the macOS and
-  # Windows wheels on the oldest and newest supported Pythons, with both dependency
+  # Windows wheels on the oldest and newest Pythons they support, with both dependency
   # extremes (python-versions covers every Python on Linux).
   platform-python-versions:
-    name: Wheel on ${{ matrix.runner }}, Python 3.10 and 3.15
+    name: Wheel on ${{ matrix.runner }}, Python ${{ matrix.oldest }} and 3.15
     needs: wheels
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-26, macos-26-intel, windows-latest]
+        include:
+          - runner: macos-26
+            oldest: "3.10"
+          - runner: macos-26-intel
+            oldest: "3.10"
+          - runner: windows-latest
+            oldest: "3.10"
+          # NumPy, SciPy and scikit-learn have Windows ARM64 wheels from Python 3.11 on,
+          # and uv offers no Windows ARM64 Pythons to download, so setup-python installs them.
+          - runner: windows-11-arm
+            oldest: "3.11"
+            setup-python: true
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
+      - id: oldest
+        if: matrix.setup-python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.oldest }}
+      - id: newest
+        if: matrix.setup-python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.15"
       - uses: actions/download-artifact@v8
         with:
           name: wheel-${{ matrix.runner }}
           path: dist
-      - run: |
-          for python in 3.10 3.15; do
+      - env:
+          OLDEST: ${{ steps.oldest.outputs.python-path || matrix.oldest }}
+          NEWEST: ${{ steps.newest.outputs.python-path || '3.15' }}
+        run: |
+          for python in "$OLDEST" "$NEWEST"; do
             for resolution in highest lowest-direct; do
               echo "=== Python $python, $resolution dependencies"
               .github/scripts/test_wheel.sh "$python" "$resolution"

@@ -18,7 +18,7 @@ pip install --index-url https://test.pypi.org/simple/ \
 | | |
 |---|---|
 | Python | 3.10 and later, including free-threaded builds. One wheel per platform serves every version. |
-| Platforms | Linux (x86_64, aarch64; glibc 2.28+), macOS 26+ (Apple Silicon and Intel) and Windows (x86_64). |
+| Platforms | Linux (x86_64, aarch64; glibc 2.28+), macOS 26+ (Apple Silicon and Intel) and Windows (x86_64; ARM64 with Python 3.11+). |
 | Dependencies | NumPy and scikit-learn. No MPI, compiler or CUDA needed. |
 | GPU neighbor search | `pip install "knndbscan[gpu]"` adds CuPy and cuML (CUDA 12, Linux). |
 

@@ -4,13 +4,14 @@
 # test-dist` and by CI on Linux, macOS and Windows (Git Bash).
 #
 # Usage: .github/scripts/test_wheel.sh PYTHON RESOLUTION    e.g. 3.15 lowest-direct
+# PYTHON is a version for uv to find or download, or the path of an interpreter.
 #
 # The wheel is py3-none-<platform>, so this proves it on each interpreter, with the newest
 # (highest) or the oldest (lowest-direct) dependency versions the metadata allows.
 set -euo pipefail
 python=$1
 resolution=$2
-env=build/test-wheel/$python-$resolution
+env=build/test-wheel/${python//[^A-Za-z0-9.]/_}-$resolution
 
 rm -rf "$env"
 uv venv -q --python "$python" "$env"
