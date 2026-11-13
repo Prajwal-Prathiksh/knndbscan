@@ -2,6 +2,32 @@
   "seed": 25,
   "eps": 0.55,
   "min_samples": 6,
+  "colours": {
+    "core": "#1f5fa8",
+    "border": "#e1a800",
+    "noise": "#757575",
+    "cut": "#c0392b",
+    "dark": "#424242",
+    "grey": "#8a8a8a",
+    "light": "#d6d6d6",
+    "palette": [
+      "#c0392b",
+      "#e1a800",
+      "#2e7d32",
+      "#1f5fa8",
+      "#6d3b0f",
+      "#ef7d1a",
+      "#6a1b9a",
+      "#d81b8a",
+      "#00838f",
+      "#7cb342",
+      "#5c6bc0",
+      "#a1887f",
+      "#f06292",
+      "#26a69a"
+    ]
+  },
+  "bridge_rank_of_partner": 6,
   "n_points": 107,
   "n_core": 92,
   "n_border": 10,
@@ -28,5 +54,12 @@
     "side": 6,
     "min_samples": 5
   },
-  "sentinel_pieces": 20
+  "sentinel_pieces": 20,
+  "data_pairs": 29,
+  "data_longer_cycles": 0,
+  "random_pairs": 0,
+  "random_longer_cycles": [
+    3,
+    4
+  ]
 }

@@ -70,7 +70,7 @@ make test-dist PYTHONS=3.15 RESOLUTIONS=lowest-direct  # one cell of that matrix
 | `src/knndbscan/` | The Python package: `_native.py` (ctypes binding), `cluster.py` (public API), `neighbors.py` (kNN graphs on CPU or GPU). |
 | `tests/` | pytest suite; `reference.py` is the independent reference implementation. |
 | `examples/` | Runnable examples (`uv run python examples/<name>.py`). |
-| `docs/` | ALGORITHM.md (paper to code), RELEASING.md, the SC20 environment; `report/` the Typst report on the method (`make report`), whose `template.typ` any report can import, and `report/figures/` its appendix figures, computed by `make_figures.py` (`make report-figures`). |
+| `docs/` | ALGORITHM.md (paper to code), RELEASING.md, the SC20 environment; `report/` the Typst report on the method (`make report`), written with `report/companion/`, a standalone Typst package for technical companions, with its panels and example numbers in `report/figures/`, computed by `make_figures.py` (`make report-figures`). |
 
 - `src/knndbscan/__init__.py` re-exports the public API; import from `knndbscan`, not from
   the module a name lives in.

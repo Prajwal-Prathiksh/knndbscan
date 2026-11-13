@@ -169,7 +169,7 @@ def draw_edges(
 
 
 def save(name: str, draw, X: np.ndarray, size=(3.0, 3.0), background=None) -> None:
-    """Draw one storyboard panel: square, no ticks, the example's bounds."""
+    """Draw one storyboard panel: square, no ticks, the bounds of X plus a margin."""
     fig, ax = plt.subplots(figsize=size)
     ax.set_xticks([])
     ax.set_yticks([])
@@ -490,14 +490,225 @@ def sentinel(graph: Graph, ours: np.ndarray) -> dict:
     return {"sentinel_pieces": len(piece_ids)}
 
 
+def zoom(ax, centre: np.ndarray, half: float, title: str | None = None) -> None:
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect("equal")
+    ax.set_xlim(centre[0] - half, centre[0] + half)
+    ax.set_ylim(centre[1] - half, centre[1] + half)
+    if title:
+        ax.set_title(title, fontsize=8.5, loc="left", pad=3)
+
+
+def save_figure(fig, name: str) -> None:
+    fig.tight_layout(pad=0.2, w_pad=0.8)
+    fig.savefig(OUT / f"{name}.svg", bbox_inches="tight", metadata={"Date": None})
+    plt.close(fig)
+
+
+def story_intuition(graph: Graph, ours: np.ndarray) -> dict:
+    """The opening picture, and zooms that show why Lemma 3.1 holds and where DBSCAN differs."""
+    X, core = graph.X, graph.core
+    save("points", lambda ax: ax.scatter(*X.T, s=10, c=DARK, zorder=3), X)
+
+    # Lemma 3.1 seen on one point: its eps-disk holds M points exactly when its
+    # (M-1)-th neighbor lies inside the disk.
+    kth = graph.distances[:, MIN_SAMPLES - 2]
+    near = np.flatnonzero(
+        core & (kth > 0.75 * EPS)
+    )  # a core point with its last neighbor near the rim
+    border = np.flatnonzero(~core & (ours >= 0))
+    fig, axes = plt.subplots(1, 2, figsize=(4.6, 2.4))
+    for ax, i, title in [
+        (axes[0], int(near[0]), "core"),
+        (axes[1], int(border[0]), "not core"),
+    ]:
+        zoom(ax, X[i], 0.85, title)
+        ax.scatter(*X.T, s=8, c=LIGHT, zorder=1)
+        colour = CORE if core[i] else BORDER
+        ax.add_patch(
+            Circle(X[i], EPS, fill=False, ls="--", lw=0.8, color=colour, zorder=2)
+        )
+        for rank, j in enumerate(graph.neighbors[i, : MIN_SAMPLES - 1], start=1):
+            last = rank == MIN_SAMPLES - 1
+            ax.plot(
+                *X[[i, j]].T,
+                color=RED if last else GREY,
+                lw=1.1 if last else 0.7,
+                zorder=2,
+            )
+            ax.scatter(*X[j], s=14, c=DARK, zorder=3)
+            ax.annotate(str(rank), X[j], xytext=(3, 3), textcoords="offset points",
+                        fontsize=7, color=RED if last else "#555555")  # fmt: skip
+        ax.scatter(*X[i], s=34, c=colour, edgecolors=DARK, lw=0.6, zorder=4)
+    save_figure(fig, "zoom-core")
+
+    # A DBSCAN bridge: two core points within eps of each other, in different kNN-DBSCAN
+    # clusters, because neither is among the other's M-1 nearest neighbors.
+    bridges = [(int(i), int(j)) for i in np.flatnonzero(core) for j in np.flatnonzero(core)
+               if i < j and ours[i] != ours[j] and np.linalg.norm(X[i] - X[j]) <= EPS]  # fmt: skip
+    i, j = bridges[0]
+    fig, ax = plt.subplots(figsize=(3.0, 3.0))
+    zoom(ax, (X[i] + X[j]) / 2, 0.75)
+    colours = cluster_colours(ours)
+    ax.scatter(*X.T, s=9, c=[colours[t] for t in range(len(X))], alpha=0.35, zorder=1)
+    for a in (i, j):
+        for b in graph.neighbors[a, : MIN_SAMPLES - 1]:
+            ax.add_patch(FancyArrowPatch(X[a], X[b], arrowstyle="-|>", mutation_scale=8,
+                                         color=colours[a], lw=0.9, shrinkA=3, shrinkB=3,
+                                         zorder=3))  # fmt: skip
+    ax.plot(*X[[i, j]].T, color=RED, lw=1.3, ls="--", zorder=2)
+    ax.annotate(r"$d \leq \varepsilon$", (X[i] + X[j]) / 2, xytext=(0, -12),
+                textcoords="offset points", ha="center", fontsize=8, color=RED)  # fmt: skip
+    ax.scatter(
+        *X[[i, j]].T,
+        s=40,
+        c=[colours[i], colours[j]],
+        edgecolors=DARK,
+        lw=0.7,
+        zorder=4,
+    )
+    save_figure(fig, "bridge")
+
+    # The k-distance curve that eps is chosen from: points left of the crossing are core.
+    order = np.sort(kth)
+    fig, ax = plt.subplots(figsize=(4.6, 1.9))
+    ax.scatter(
+        np.arange(len(order)),
+        order,
+        s=7,
+        c=np.where(order <= EPS, CORE, NOISE),
+        zorder=3,
+    )
+    ax.axhline(EPS, color=CORE, ls="--", lw=0.8)
+    ax.text(1, EPS + 0.03, r"$\varepsilon$", color=CORE, fontsize=9)
+    ax.set_xlabel("points, by distance to their $(M-1)$-th neighbor", fontsize=7.5)
+    ax.set_ylabel("distance", fontsize=7.5)
+    ax.tick_params(labelsize=7)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    save_figure(fig, "kdist")
+    return {
+        "bridge_rank_of_partner": int(
+            np.searchsorted(graph.distances[i], np.linalg.norm(X[i] - X[j])) + 1
+        )
+    }
+
+
+def functional_cycles(target: np.ndarray) -> list[list[int]]:
+    """The cycles of the map i -> target[i] (each vertex's selected edge)."""
+    state = np.zeros(len(target), dtype=int)  # 0 unseen, 1 on the current path, 2 done
+    cycles = []
+    for start in range(len(target)):
+        path, v = [], start
+        while state[v] == 0:
+            state[v] = 1
+            path.append(v)
+            v = int(target[v])
+        if state[v] == 1:
+            cycles.append(path[path.index(v) :])
+        for u in path:
+            state[u] = 2
+    return cycles
+
+
+def selections(graph: Graph) -> dict:
+    """First-round selections on real data and on a random directed graph, with their cycles.
+
+    On data, the lightest edges form mutual pairs; on a random directed graph, whose
+    weights obey no geometry, they also form longer cycles: the cases that break naive
+    pointer jumping, and why the tests use random graphs.
+    """
+    X, core = graph.X, graph.core
+    idx = np.flatnonzero(core)
+    position = {int(i): k for k, i in enumerate(idx)}
+    first = np.array(
+        [position[next(int(j) for j in graph.neighbors[i] if core[j])] for i in idx]
+    )
+    data_cycles = functional_cycles(first)
+
+    n = 36
+    for seed in range(1000):
+        rng = np.random.default_rng(seed)
+        Y = rng.uniform(0, 1, (n, 2))
+        target = np.array(
+            [rng.choice([j for j in range(n) if j != i]) for i in range(n)]
+        )
+        cycles = functional_cycles(target)
+        lengths = sorted(len(c) for c in cycles)
+        if 4 in lengths and 3 in lengths:
+            break
+
+    def draw(ax, P, target, cycles):
+        on_cycle = {v: len(c) for c in cycles for v in c}
+        for i, j in enumerate(target):
+            length = (
+                on_cycle.get(i) if on_cycle.get(int(j)) == on_cycle.get(i) else None
+            )
+            colour = RED if length and length > 2 else (DARK if length == 2 else LIGHT)
+            ax.add_patch(FancyArrowPatch(P[i], P[j], arrowstyle="-|>", mutation_scale=7,
+                                         color=colour, lw=1.0 if length else 0.6,
+                                         shrinkA=2.5, shrinkB=2.5, zorder=3 if length else 2))  # fmt: skip
+        ax.scatter(*P.T, s=10, c=DARK, zorder=4)
+
+    fig, axes = plt.subplots(1, 2, figsize=(4.6, 2.4))
+    for ax, P, t, c, title in [(axes[0], X[idx], first, data_cycles, "data"),
+                               (axes[1], Y, target, cycles, "random directed graph")]:  # fmt: skip
+        pad = 0.08 * np.ptp(P, axis=0).max()
+        zoom(
+            ax,
+            (P.min(axis=0) + P.max(axis=0)) / 2,
+            np.ptp(P, axis=0).max() / 2 + pad,
+            title,
+        )
+        draw(ax, P, t, c)
+    save_figure(fig, "selections")
+    longer = sorted(len(c) for c in cycles if len(c) > 2)
+    return {"data_pairs": sum(len(c) == 2 for c in data_cycles),
+            "data_longer_cycles": sum(len(c) > 2 for c in data_cycles),
+            "random_pairs": sum(len(c) == 2 for c in cycles), "random_longer_cycles": longer}  # fmt: skip
+
+
+def performance() -> None:
+    """The paper's measurements (Chen, Ruys and Biros, Sec. 5) as bars."""
+    fig, (a, b) = plt.subplots(
+        1, 2, figsize=(5.4, 1.7), gridspec_kw={"width_ratios": [1.2, 1]}
+    )
+    a.barh([1, 0], [400, 1], color=[GREY, CORE], height=0.55)
+    a.set_yticks([1, 0], ["kNN graph", "clustering"], fontsize=7.5)
+    a.set_xlabel("time, relative to clustering (64M points, 5-D, k = 100)", fontsize=7)
+    a.text(400, 1, " 400×", va="center", fontsize=7.5)
+    a.text(1, 0, "  1×", va="center", fontsize=7.5, color=CORE)
+    a.set_xlim(0, 470)
+    dims, speedup = ["3-D", "5-D", "32-D"], [13.8, 16.8, 22.2]
+    b.bar(dims, speedup, color=CORE, width=0.55)
+    b.axhline(64, color=GREY, ls="--", lw=0.8)
+    b.text(2.3, 64, "ideal 64", va="bottom", ha="right", fontsize=7, color="#555555")
+    for k, v in enumerate(speedup):
+        b.text(k, v + 1.5, f"{v}", ha="center", fontsize=7)
+    b.set_ylabel("speedup, 4 → 256 ranks", fontsize=7)
+    b.set_ylim(0, 72)
+    for ax in (a, b):
+        ax.tick_params(labelsize=7)
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+    save_figure(fig, "performance")
+
+
 def main() -> None:
     seed, graph, ours, theirs = choose_dataset()
     numbers = {"seed": seed, "eps": EPS, "min_samples": MIN_SAMPLES}
+    # The report draws its own diagrams and colour keys in the panels' colours.
+    numbers["colours"] = {"core": CORE, "border": BORDER, "noise": "#757575", "cut": RED,
+                          "dark": DARK, "grey": GREY, "light": LIGHT, "palette": PALETTE}  # fmt: skip
+    numbers |= story_intuition(graph, ours)
     numbers |= story_definitions(graph, ours, theirs)
     numbers |= story_boruvka(graph, ours)
     numbers |= story_distributed(graph, ours)
     numbers |= {"eps_grid": eps_boundary()}
     numbers |= sentinel(graph, ours)
+    numbers |= selections(graph)
+    performance()
     (OUT / "example.json").write_text(json.dumps(numbers, indent=2) + "\n")
     print(json.dumps(numbers))
 

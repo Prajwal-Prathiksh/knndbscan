@@ -1,5 +1,5 @@
-#import "template.typ": *
-#import "@preview/fletcher:0.5.8" as fletcher: diagram, node, edge
+#import "companion/lib.typ": *
+#import "@preview/fletcher:0.5.8" as fletcher: diagram, edge, node
 
 #show: report.with(
   title: [kNN-DBSCAN: algorithm, distributed implementation and correctness],
@@ -8,74 +8,170 @@
   date: [November 2026 · knndbscan 0.2],
   abstract: [
     kNN-DBSCAN replaces DBSCAN's range queries by a $k$-nearest-neighbor graph, which can
-    be computed approximately and at scale in high dimensions. This report distills the
-    method of Chen, Ruys and Biros @paper for readers who want to understand, use or modify
-    an implementation without first reading the paper: the definitions and how they relate
-    to DBSCAN, the reduction of clustering to a spanning forest, Borůvka's algorithm on a
-    directed kNN graph, and the distributed (MPI + OpenMP) algorithm. It adds what the
-    paper does not need to say but an implementation must get right: numerical
-    conventions, the cycles that directed graphs create in Borůvka's pointer jumping, the
-    invariants the code depends on, and how correctness is verified. Every claim about
-    the implementation is checked by the project's test suite.
+    be computed approximately and at scale in high dimensions. This companion explains the
+    method of Chen, Ruys and Biros @paper to readers who want to understand, use or modify
+    an implementation without first reading the paper. It follows one small example from
+    start to end: why the graph classifies points exactly as DBSCAN does, why its clusters
+    refine DBSCAN's, how Borůvka's algorithm grows them as trees, what changes on many
+    machines, and which details an implementation must get right. Every idea is shown as a
+    picture, explained in words and stated formally, and every claim about the
+    implementation is checked by the project's tests.
   ],
 )
 
-= Introduction
+// ------------------------------------------------------------------- shared vocabulary
+// Numbers and colours of the running example, written by figures/make_figures.py with its
+// panels, so that the text, the panels and the diagrams below cannot disagree.
+#let ex = json("figures/example.json")
+#let core-colour = rgb(ex.colours.core)
+#let border-colour = rgb(ex.colours.border)
+#let noise-colour = rgb(ex.colours.noise)
+#let cut-colour = rgb(ex.colours.cut)
+#let panel(name, width: 100%) = image("figures/" + name + ".svg", width: width)
 
-DBSCAN @ester1996 clusters points by density: a point with at least $M$ points within
-distance $epsilon$ is a _core point_, core points within $epsilon$ of each other belong to
-the same cluster, and points near a cluster's core join it as _border points_; the rest
-is _noise_. It needs no number of clusters, finds clusters of any shape and is robust to
-outliers. Its cost lies in the $epsilon$-neighborhoods: range queries are cheap with
-spatial trees in low dimensions but degrade towards $O(n^2)$ comparisons as the
-dimension grows, and every new value of $epsilon$ repeats them.
+// Pointer states as a small graph: `pointers` maps each node to its target, and a node
+// pointing at itself looks like a root, so it is shaded and drawn with a loop.
+#let pointer-state(positions, pointers, bend: 14deg, spacing: 2.3em) = {
+  let roots = pointers.filter(((u, v)) => u == v).map(((u, v)) => u)
+  diagram(
+    spacing: (spacing, spacing),
+    node-stroke: 0.6pt,
+    node-shape: circle,
+    node-inset: 3pt,
+    ..positions.pairs().map(((name, pos)) => node(
+      pos, text(9pt)[$#name$], name: label(name), fill: if name in roots { rgb("#f6d7d2") } else { white },
+    )),
+    ..pointers.map(((u, v)) => if u == v {
+      edge(label(u), label(u), "-|>", bend: 130deg, stroke: 0.6pt + cut-colour)
+    } else {
+      edge(label(u), label(v), "-|>", bend: bend, stroke: 0.6pt)
+    }),
+  )
+}
+#let square = (a: (0, 0), b: (1, 0), c: (1, 1), d: (0, 1))
+#let triangle = (a: (0, 0), b: (1, 0), c: (0.5, 0.9))
+#let pair = (u: (0, 0), v: (1, 0))
+#let chain = (a: (0, 0), b: (1, 0), c: (2, 0), d: (3, 0), e: (4, 0), f: (5, 0), g: (6, 0), h: (7, 0))
+// Each node of the chain a <- b <- ... <- h after t rounds of pointer jumping: 2^t steps back.
+#let jumped(t) = {
+  let names = chain.keys()
+  names.enumerate().map(((k, name)) => (name, names.at(calc.max(0, k - calc.pow(2, t)))))
+}
+#let small(body) = text(8pt, body)
 
-kNN-DBSCAN @paper keeps DBSCAN's parameters and its classification of points, but
-connects core points through a $k$-nearest-neighbor graph ($k$-NNG) instead of
-$epsilon$-neighborhoods. A $k$-NNG can be approximated well in high dimensions (randomized
-projection trees @xiao2016, as in GOFMM @yu2018), is computed once for all $epsilon$ and
-all $M <= k + 1$, and stores $O(n k)$ edges. Clustering the graph then reduces to
-computing a spanning forest, which parallelizes with Borůvka's algorithm in shared and
-distributed memory.
+// ---------------------------------------------------------------------- the algorithm
+#let driver = (
+  require[this rank's rows of the kNN graph, sorted, without the point itself; $epsilon$; $M$],
+  ensure[a cluster label for each of this rank's points, $-1$ for noise],
+  ln(0, [$C <- {i : "distance in column" M - 1 "of row" i <= epsilon}$], note: [core points (@sec:classify)]),
+  ln(0, [$R$, cut edges $<-$ local Borůvka over $C$], note: [@alg:local]),
+  ln(0, [number this rank's subtrees after those of lower ranks], note: [`Allgather`]),
+  ln(0, [rewrite each cut edge $(i, j)$ as $(R[i], R[j])$], note: [`Alltoallv` to $j$'s rank]),
+  ln(0, [roots $<-$ cut MST over the subtrees], note: [@alg:cut]),
+  ln(0, [$R[i] <-$ root of $R[i]$ for every $i in C$]),
+  ln(0, [*parallel for* each non-core point $i$], note: [border points]),
+  ln(1, [$q <-$ first core neighbor of $i$ within $epsilon$, preferring one on this rank], note: [`Alltoallv` if remote]),
+  ln(1, [$R[i] <- R[q]$ if $q$ exists, otherwise $-1$], note: [noise]),
+)
+#let one-rank = (label: <alg:driver>, lines: driver)
 
-The report follows the path from definitions to code:
-@sec:dbscan and @sec:knn define both methods and relate them;
-@sec:forest reduces clustering to a spanning forest and develops Borůvka's algorithm on a
-directed graph; @sec:distributed distributes it over MPI ranks;
-@sec:numerics collects the numerical conventions and invariants an implementation must
-keep; @sec:verification describes how correctness is verified, with the defects this
-found in the original implementation; @sec:performance summarizes performance.
-@app:pictures retells the algorithm as a storyboard on a small example: each step shows
-the pseudocode with the lines in question highlighted, beside a picture of what they do,
-for every stage and for every defect.
+= What do you see? <sec:intro>
 
-#note[
-  Numbers such as "Theorem 3.4" refer to the paper. Statements here are restated in a
-  single notation and sometimes split or sharpened; the proofs are sketches that convey
-  why a result holds. The code is organized by the same stages: `docs/ALGORITHM.md` maps
-  each one to its file and function.
+#question[Look at these points. Which of them belong together?]
+
+#scene(side: left, width: 34%, panel("points"))[
+  Most people see three groups and a handful of stragglers, without being told how many
+  groups to look for or what shape they have. _Density-based clustering_ turns that
+  perception into a rule: a group is a region where points are packed closely, and a
+  straggler is a point in a sparse region. DBSCAN @ester1996 is the classic such rule. It
+  needs no number of clusters, finds clusters of any shape, and sets outliers aside as
+  noise.
+
+  Its cost is the question it asks of every point: _which points lie within distance
+  $epsilon$ of you?_ In two dimensions a spatial tree answers this quickly. As the
+  dimension grows, trees degrade towards comparing every pair of points, $O(n^2)$, and
+  every new value of $epsilon$ asks again.
 ]
 
-== Notation
+#scene(width: 34%, panel("knn-graph"))[
+  kNN-DBSCAN @paper asks a different question: _who are your $k$ nearest neighbors?_
+  The answers form a $k$-nearest-neighbor graph ($k$-NNG): an arrow from each point to
+  each of its $k$ nearest neighbors. Unlike range queries, this graph can be approximated
+  well in high dimensions (randomized projection trees @xiao2016, as in GOFMM @yu2018),
+  it stores only $O(n k)$ edges, and it is computed once: every $epsilon$ and every
+  $M <= k + 1$ can be clustered from it.
 
-#figure(
-  table(
-    columns: (auto, 1fr),
-    align: (center, left),
-    table.header[Symbol][Meaning],
-    $cal(I)$, [the set of $n$ points],
-    $d(p, q)$, [distance between points $p$ and $q$ (Euclidean in the Python package)],
-    $epsilon, M$, [radius and minimum number of points (`eps`, `min_samples`); $M$ counts the point itself],
-    $cal(N)_epsilon (p)$, [$epsilon$-neighborhood ${q in cal(I) : d(p, q) <= epsilon}$, including $p$],
-    $cal(N)_M (p)$, [the $M$ nearest points to $p$, including $p$],
-    $k$, [neighbors stored per point in the $k$-NNG, excluding the point itself],
-    $cal(I)_"core", cal(I)_"border", cal(I)_"noise"$, [the three classes of points],
-    $P$, [number of MPI ranks],
-  ),
-  caption: [Notation.],
+  The surprise is how little is lost. The graph classifies every point exactly as DBSCAN
+  does, and its clusters differ from DBSCAN's only by splitting a cluster that a thin
+  bridge holds together.
+]
+
+#filmstrip(
+  (panel("points"), [points]),
+  (panel("knn-graph"), [kNN graph \ @sec:intro]),
+  (panel("core-points"), [core points \ @sec:classify]),
+  (panel("components"), [linked cores \ @sec:reach]),
+  (panel("boruvka-end"), [trees \ @sec:forest]),
+  (panel("labels"), [clusters, noise \ @sec:classify]),
+  caption: [The whole method on the running example, one frame per idea. Each later section
+    explains one frame, then states it formally.],
+) <fig:pipeline>
+
+The running example has #ex.n_points points in three blobs, with $M = #ex.min_samples$
+and $epsilon = #ex.eps$. Its panels are computed, not drawn: `figures/make_figures.py`
+replays the algorithm exactly as the pseudocode states it, stops unless the replay finds
+the library's clusters, and writes the numbers this text quotes.
+
+== The algorithm at a glance
+
+All of kNN-DBSCAN fits in nine lines. They are given here once in full; whenever a later
+picture is about some of them, the algorithm appears again beside the picture with those
+lines highlighted, so there is never a reason to turn back.
+
+#algorithm(caption: [kNN-DBSCAN on one rank: `knndbscan()` (paper's Algorithm 1). On a
+  single process, lines 3--5 have nothing to exchange.], pseudocode(driver)) <alg:driver>
+
+== How to read this companion
+
+Each idea appears three times: as a *picture* of the running example, in plain *words*,
+and in *symbols*, as a definition, lemma or theorem in a tinted box. The pictures and the
+symbols say the same thing, so either can be used to check the other. Colours keep one
+meaning throughout: #swatch(core-colour) core point, #swatch(border-colour) border point,
+#swatch(noise-colour, shape: "cross") noise, #swatch(cut-colour, shape: "line") an edge
+between processes, or what goes wrong; highlighted pseudocode lines are the ones the
+picture beside them shows. Numbers such as "Theorem 3.4" refer to the paper, whose
+statements are restated in one notation; proofs are sketches that show why a result
+holds. `docs/ALGORITHM.md` maps each line of @alg:driver to its file and function.
+
+#translate(
+  [the $n$ points], $cal(I)$,
+  [the distance between two points (Euclidean in the Python package)], $d(p, q)$,
+  [the radius, and the minimum number of points, the point itself included], [$epsilon$, $M$ (`eps`, `min_samples`)],
+  [the points within $epsilon$ of $p$, $p$ included], $cal(N)_epsilon (p) = {q in cal(I) : d(p, q) <= epsilon}$,
+  [the $M$ points nearest to $p$, $p$ included], $cal(N)_M (p)$,
+  [the neighbors stored for each point, the point itself excluded], $k$,
+  [the core, border and noise points], $cal(I)_"core", cal(I)_"border", cal(I)_"noise"$,
+  [the number of processes (MPI ranks)], $P$,
 )
 
-= DBSCAN <sec:dbscan>
+#takeaway[Cluster the kNN graph instead of $epsilon$-balls: the classification of
+  points stays exactly DBSCAN's, and clustering becomes growing trees, which
+  parallelizes.]
+
+= Dense or sparse, one point at a time <sec:classify>
+
+#question[When is a point in a dense place?]
+
+#scene(panel("core-points"))[
+  Draw a disk of radius $epsilon$ around the point and count the points inside, the point
+  itself included. If there are at least $M$, the point is a *core point*
+  #swatch(core-colour): it lies inside a cluster. The blue dashed disk holds more than
+  $M = #ex.min_samples$ points; the grey one holds fewer. Of the #ex.n_points points,
+  #ex.n_core are core.
+
+  A point that is not core can still lie inside a core point's disk, at the edge of a
+  cluster: it is a *border point*. A point in no core point's disk is *noise*.
+]
 
 #definition(title: [classification of points, Def. 3.1])[
   Given $epsilon$ and $M$, a point $p$ is a _core point_ if $|cal(N)_epsilon (p)| >= M$. A
@@ -83,26 +179,24 @@ for every stage and for every defect.
   $p in cal(N)_epsilon (q)$, and _noise_ otherwise.
 ] <def:classes>
 
-#definition(title: [reachability and DBSCAN clusters, Defs. 3.2--3.5])[
-  $q$ is _directly $epsilon$-reachable_ from $p$ if $p$ is core and $q in cal(N)_epsilon (p)$;
-  _$epsilon$-reachable_ if a chain of core points $p = p_0, p_1, dots, p_m$ links them by
-  direct reachability, ending in $q$. A _DBSCAN cluster_ is a nonempty set $C$ that is
-  closed under $epsilon$-reachability (if $p in C$ is core and $q$ is reachable from $p$,
-  then $q in C$) and connected (any two members are reachable from a common core point).
+Counting points in a disk is a range query, the expensive operation. The kNN graph
+answers the same question without one.
+
+#story()
+#step([Core points from one column], code: one-rank, focus: (1,), window: 1, width: 60%, panel("zoom-core"))[
+  Number a point's neighbors by distance, $1, 2, dots, M - 1$. The disk holds $M$ points,
+  the point and $M - 1$ others, exactly when neighbor $M - 1$ (red) is inside it. Left,
+  the 5th neighbor is inside: core. Right, it is just outside: not core. One number per
+  point decides, the distance in column $M - 1$ of its row, and no communication is needed.
 ]
 
-On core points, $epsilon$-reachability is an equivalence relation, so the core points of
-the clusters are its equivalence classes: the connected components of the graph that
-joins core points at distance at most $epsilon$. Border points are not uniquely placed: a
-border point within $epsilon$ of core points of two clusters belongs to either. This
-ambiguity is inherent to DBSCAN and carries over to kNN-DBSCAN.
-
-= kNN-DBSCAN <sec:knn>
-
-== Classifying points from the $k$-NNG
-
-The first observation is that the classification of @def:classes needs only the $M$
-nearest neighbors of each point.
+#step([Border points and noise], code: one-rank, focus: (7, 8, 9), window: 1, panel("labels"))[
+  A non-core point takes the cluster of its first core neighbor within $epsilon$ (ringed;
+  one is joined to the core point it follows) and is noise, $-1$, if it has none. The
+  search never leaves the first $M - 1$ columns: a core point that could make it a border
+  point is always among its $M - 1$ nearest neighbors. Here #ex.n_border points are
+  border points and #ex.n_noise are noise.
+]
 
 #lemma(title: [Lemma 3.1])[
   + $p$ is a core point if and only if $max_(q in cal(N)_M (p)) d(p, q) <= epsilon$, that
@@ -118,24 +212,55 @@ nearest neighbors of each point.
   core point that makes $p$ a border point, is among its $M$ nearest.
 ]
 
-Consequently a $k$-NNG with $k >= M - 1$ classifies every point exactly as DBSCAN does,
-and the classification is the same whatever larger $k$ was stored. In the stored rows,
-which list each point's neighbors in increasing distance without the point itself, $p$
-is core when the distance in column $M - 1$ is at most $epsilon$.
+A $k$-NNG with $k >= M - 1$ therefore classifies every point exactly as DBSCAN does,
+whatever larger $k$ was stored, and border points may join any cluster whose core point
+reaches them: that ambiguity is DBSCAN's own.
 
-== Reachability through the graph
+#takeaway[A point's class is read from its row: core if the distance in column $M - 1$
+  is at most $epsilon$, border if a core point among its first $M - 1$ neighbors is within
+  $epsilon$.]
 
-DBSCAN links core points that are within $epsilon$ of each other. kNN-DBSCAN links them
-only through the graph:
+= Who belongs with whom <sec:reach>
+
+#question[Two core points are close to each other. Are they in the same cluster?]
+
+DBSCAN says yes when they are within $epsilon$ of each other, and links clusters through
+chains of such pairs. kNN-DBSCAN says yes only when one of them lists the other among its
+$M - 1$ nearest neighbors. On the running example the two answers differ:
+
+#filmstrip(
+  arrows: false,
+  (panel("components", width: 62%), [kNN-DBSCAN: #ex.n_clusters clusters]),
+  (panel("dbscan", width: 62%), [DBSCAN: #ex.n_dbscan_clusters clusters]),
+)
+
+#scene(width: 36%, panel("bridge"))[
+  Zoom into the red link. Its two core points are within $epsilon$, so DBSCAN links them
+  and merges two blobs. But each point's $M - 1 = #(ex.min_samples - 1)$ nearest neighbors
+  (arrows) lie in its own blob, and the other point is not among them, so kNN-DBSCAN does
+  not link them and keeps the blobs apart. Every kNN link is also a DBSCAN link (a core
+  point's $M - 1$ nearest neighbors are within $epsilon$), but not the other way round.
+]
+
+#translate(
+  [$q$ is a step from core point $p$, for DBSCAN], [$p in cal(I)_"core"$ and $d(p, q) <= epsilon$],
+  [$q$ is a step from core point $p$, for kNN-DBSCAN: either one lists the other], [$p in cal(I)_"core"$ and ($q in cal(N)_M (p)$ or $p in cal(N)_M (q)$)],
+  [core points in one kNN-DBSCAN cluster], [connected in $G_(M, "core")$: core points, joined to their core neighbors among the first $M - 1$],
+)
+
+#definition(title: [reachability and DBSCAN clusters, Defs. 3.2--3.5])[
+  $q$ is _directly $epsilon$-reachable_ from $p$ if $p$ is core and $q in cal(N)_epsilon (p)$;
+  _$epsilon$-reachable_ if a chain of core points $p = p_0, p_1, dots, p_m$ links them by
+  direct reachability, ending in $q$. A _DBSCAN cluster_ is a nonempty set $C$ that is
+  closed under $epsilon$-reachability (if $p in C$ is core and $q$ is reachable from $p$,
+  then $q in C$) and connected (any two members are reachable from a common core point).
+]
 
 #definition(title: [$M$-reachability and kNN-DBSCAN clusters, Defs. 3.6--3.9])[
   $q$ is _directly $M$-reachable_ from $p$ if $p$ is core and $q in cal(N)_M (p)$ or
   $p in cal(N)_M (q)$. $M$-reachability, $M$-connectedness and _kNN-DBSCAN clusters_ are
   defined from it exactly as their $epsilon$ counterparts.
 ] <def:mreach>
-
-The relation is symmetrized: an edge counts if either endpoint lists the other. Two
-facts make it well behaved.
 
 #lemma(title: [Lemmas 3.2 and 3.3])[
   On core points, $M$-reachability is an equivalence relation, and it implies
@@ -148,10 +273,9 @@ facts make it well behaved.
   $d(p, q) <= epsilon$ by @lem:classify, so each $M$-step is an $epsilon$-step.
 ]
 
-So the core points of kNN-DBSCAN clusters are the connected components of the graph
-$G_(M, "core")$ whose vertices are the core points and whose edges join $p$ to its
-first $M - 1$ neighbors when both are core. No distance test is needed on these edges:
-they are within $epsilon$ automatically.
+So the core points of each kNN-DBSCAN cluster are a connected component of
+$G_(M, "core")$, and its edges need no distance test: they are within $epsilon$
+automatically.
 
 #theorem(title: [relation to DBSCAN, Theorem 3.4])[
   With the same $epsilon$ and $M$:
@@ -170,24 +294,41 @@ they are within $epsilon$ automatically.
   clusterings of the core points coincide.
 ]
 
-kNN-DBSCAN can therefore _split_ a cluster that DBSCAN joins through a sparse bridge,
-where two core points are within $epsilon$ but not among each other's $M - 1$ nearest
-neighbors, and never _merges_ clusters that DBSCAN separates. In the paper's
-experiments, and in this project's tests on blobs, moons, anisotropic and 20-dimensional
-data, the clusterings agree on the core points whenever the counts agree, as part (2)
-guarantees.
+In the paper's experiments, and in this project's tests on blobs, moons, anisotropic and
+20-dimensional data, the two clusterings agree on the core points whenever their counts
+agree, as part (2) guarantees.
 
 #note(title: [Consequences for the graph])[
   Only the first $M - 1$ columns of each row are ever read: they decide core points
-  (column $M - 1$), cluster edges (columns $1, dots, M - 1$) and border candidates
-  (@lem:classify, part 2). A graph stored with $k$ neighbors therefore serves every
-  $M <= k + 1$ and every $epsilon$ without recomputation, which is what makes
-  parameter search cheap: the graph is the expensive part (@sec:performance).
+  (column $M - 1$), cluster edges (columns $1, dots, M - 1$) and border candidates. A
+  graph stored with $k$ neighbors therefore serves every $M <= k + 1$ and every $epsilon$
+  without recomputation, which makes parameter search cheap: the graph is the expensive
+  part (@sec:performance).
 ]
 
-= Clusters as spanning forests <sec:forest>
+#takeaway[kNN-DBSCAN links fewer pairs than DBSCAN, so its clusters refine DBSCAN's: it
+  can split a cluster held together by a sparse bridge, and never merges two.]
 
-== From components to spanning trees
+= Clusters are trees <sec:forest>
+
+#question[The clusters are the connected components of $G_(M, "core")$. How are the
+  components of a graph with billions of edges found in parallel?]
+
+Grow a tree through each component. A spanning forest has exactly the components of its
+graph, and _Borůvka's algorithm_ grows all of its trees at once: every tree, or
+_subtree_, picks its lightest edge to another subtree, and the picks merge subtrees.
+Every pick merges its subtree with another, so each round at least halves the number of
+subtrees that can still merge, and $O(log n)$ rounds suffice.
+
+#filmstrip(
+  (panel("boruvka-1"), [round 1: #ex.rounds.at(0) subtrees]),
+  (panel("boruvka-2"), [round 2: #ex.rounds.at(1)]),
+  (panel("boruvka-3"), [round 3: #ex.rounds.at(2)]),
+  (panel("boruvka-end"), [#ex.rounds.at(3) trees: the clusters]),
+  caption: [Borůvka on the core points of the running example. Arrows are the picks of a
+    round, colours the subtrees it starts from, red arrows pairs of subtrees that picked
+    each other. Each round's picks merge the subtrees into the next frame's.],
+) <fig:boruvka>
 
 #theorem(title: [Theorem 3.5])[
   The connected components of a minimum spanning forest of $G_(M, "core")$ are the
@@ -195,27 +336,68 @@ guarantees.
   DBSCAN clusters).
 ] <thm:mst>
 
-A spanning forest has the same components as the graph, so the statement is immediate;
-its value is algorithmic. Spanning forests can be built in parallel with Borůvka's
-algorithm, and a _minimum_ spanning forest additionally supports hierarchical
-clustering. For clustering alone minimality is not needed, a fact the implementation
-relies on (@prop:nonminimal).
+The statement is immediate, since a spanning forest has its graph's components; its value
+is algorithmic. A _minimum_ spanning forest also supports hierarchical clustering; for the
+clusters alone minimality is not needed (@prop:nonminimal). A round has three mechanics.
 
-== Borůvka's algorithm
+== Picking: the lightest edge is the first eligible one
 
-Borůvka's algorithm grows all trees at once. Each _subtree_ (initially a single core
-point) selects its lightest edge to another subtree; the selected edges merge subtrees;
-the round repeats until no subtree has an edge left. Each round at least halves the
-number of subtrees that can still merge, so $O(log n)$ rounds suffice. A round has four
-steps, shown in @alg:local for one shared-memory process:
+#scene(width: 46%, {
+  let cell(body, struck: false, picked: false) = box(
+    width: 2.4em, height: 1.7em, stroke: 0.6pt,
+    fill: if picked { core-colour.lighten(80%) } else { white },
+    align(center + horizon, if struck { text(fill: luma(150), strike(body)) } else { body }),
+  )
+  grid(
+    columns: 6, column-gutter: 0pt, row-gutter: 0.35em, align: center + horizon,
+    small[row $i$ #h(0.4em)], cell($q_1$, struck: true), cell($q_2$, struck: true),
+    cell($q_3$, picked: true), cell($q_4$), cell($q_5$),
+    [], small[same \ subtree], small[not \ core], small[*picked*], [], [],
+    [], [], [], text(fill: core-colour)[$arrow.t$ #small[$L[i]$]], [], [],
+  )
+})[
+  Each row lists a point's neighbors in increasing distance, so the first neighbor that
+  is a core point in another subtree is the point's lightest such edge, and the scan stops
+  there. Each subtree keeps the lightest edge its points propose. An edge that has become
+  internal to a subtree stays internal, so the column pointer $L[i]$ only moves forward:
+  over all rounds, each of the $n (M - 1)$ edges is inspected a bounded number of times.
+]
 
-/ Minimum edges: every core point proposes its lightest edge to another subtree, and each
-  subtree keeps the lightest proposal (`pwrite`, Algorithm 3 of the paper).
-/ Breaking symmetry: each subtree $u$ points to the target $p(u)$ of its edge, or to itself
-  if it has none. Two subtrees that chose each other point at the one with the smaller id.
-/ Pointer jumping: $p(u) <- p(p(u))$ until nothing changes; then every subtree points to
-  the root of its new tree.
-/ Relabelling: each core point takes the root of its subtree.
+== Breaking symmetry: a mutual pair elects a root
+
+#scene(side: left, width: 40%, grid(
+  columns: 3, column-gutter: 1.2em, row-gutter: 0.5em, align: center + horizon,
+  pointer-state(pair, (("u", "v"), ("v", "u")), bend: 30deg, spacing: 3em),
+  text(13pt, fill: luma(100))[→],
+  pointer-state(pair, (("u", "u"), ("v", "u")), spacing: 3em),
+  small[$u$ and $v$ pick each other], [], small[$u < v$: $u$ is the root],
+))[
+  Each subtree $u$ points to the subtree $p(u)$ its edge reaches, or to itself if it has
+  no edge. Two subtrees that picked each other would point at each other forever, so the
+  one with the smaller id points at itself and becomes the root of both. In the running
+  example every new subtree contains exactly one such pair: #ex.mutual.at(0) pairs in
+  round 1 for #ex.rounds.at(1) new subtrees, #ex.mutual.at(1) in round 2 for
+  #ex.rounds.at(2).
+]
+
+== Pointer jumping: everyone finds the root in $log$ steps
+
+#figure(
+  grid(
+    columns: (auto, 1fr), column-gutter: 1.2em, row-gutter: 0.9em, align: (right + horizon, center + horizon),
+    $p$, pointer-state(chain, jumped(0), bend: 0deg, spacing: 1.9em),
+    $p^2$, pointer-state(chain, jumped(1), bend: 35deg, spacing: 1.9em),
+    $p^4$, pointer-state(chain, jumped(2), bend: 35deg, spacing: 1.9em),
+    $p^8$, pointer-state(chain, jumped(3), bend: 35deg, spacing: 1.9em),
+  ),
+  caption: [Pointer jumping on a chain of depth 7: every node replaces its pointer by its
+    pointer's pointer, $p <- p compose p$, so after $t$ rounds it points $2^t$ steps
+    ahead, or at the root. After $ceil(log_2 7) = 3$ rounds every node points at the
+    root $a$.],
+) <fig:jumping>
+
+After pointer jumping every subtree points at the root of its new tree, and each core
+point takes that root as its label. With the three mechanics, the whole local algorithm:
 
 #let local-boruvka = (
   require[core points $C$ of this process; neighbor rows sorted by distance],
@@ -223,7 +405,7 @@ steps, shown in @alg:local for one shared-memory process:
   ln(0, [$R[i] <- i$ and $L[i] <- 1$ for every $i in C$], note: [$L[i]$: next column of row $i$]),
   ln(0, [*repeat*]),
   ln(1, [$E_min [u] <- ("none", +infinity)$ for every subtree $u$]),
-  ln(1, [*parallel for* $i in C$], note: [minimum edges]),
+  ln(1, [*parallel for* $i in C$], note: [pick]),
   ln(2, [*while* $L[i] <= M - 1$]),
   ln(3, [$q <-$ neighbor $L[i]$ of $i$]),
   ln(3, [*if* $q$ is stored on another rank *then* record cut edge $(i, q)$; $L[i] <- L[i] + 1$]),
@@ -236,89 +418,153 @@ steps, shown in @alg:local for one shared-memory process:
   ln(1, [$R[i] <- p(R[i])$ for every $i in C$], note: [relabel]),
   ln(0, [*until* the number of subtrees does not decrease]),
 )
+#let local = (label: <alg:local>, lines: local-boruvka)
 
-#algorithm(caption: [Local Borůvka over the core points of one process (paper's Algorithm 2).], pseudocode(local-boruvka)) <alg:local>
+#algorithm(caption: [Local Borůvka over the core points of one process (paper's
+  Algorithm 2). `pwrite` keeps the lighter of two proposals (paper's Algorithm 3).],
+  pseudocode(local-boruvka)) <alg:local>
 
-Two details matter for cost. Rows are sorted, so the first eligible neighbor of a point
-is its lightest outgoing edge, and the scan stops there. And an edge that has become
-internal to a subtree stays internal, so the column pointer $L[i]$ only moves forward:
-over all rounds each of the $n(M-1)$ edges is inspected a bounded number of times.
+#story()
+#step([Round 1: every subtree picks], code: local, focus: (1, 3, 4, 5, 6, 7, 8, 9), panel("boruvka-1"))[
+  Every core point starts as a subtree of its own (dark). It scans its row and stops at
+  the first core neighbor in another subtree, its lightest edge (arrows). Red arrows are
+  the #ex.mutual.at(0) pairs that picked each other.
+]
 
-== Cycles in a directed graph <sec:cycles>
+#step([Round 1: merge along the picks], code: local, focus: (10, 11, 12, 13, 14), panel("boruvka-merged-1"))[
+  Each subtree points along its pick; each mutual pair elects its smaller id; pointer
+  jumping takes every subtree to its root, and relabelling hands the root to every
+  point. The #ex.rounds.at(0) subtrees become #ex.rounds.at(1), drawn with the edges of
+  their trees.
+]
 
-In an undirected graph with distinct weights, the selected edges contain no cycles except
-mutual pairs, which symmetry breaking resolves: following selections strictly decreases
-the weight. A kNN graph is _directed_: $q in cal(N)_M (p)$ does not imply
-$p in cal(N)_M (q)$, so subtree $u$ sees only the edges its own points list. The weights
-along a chain of selections need not decrease, and longer cycles appear (@fig:cycle).
-Ties in the weights, frequent with duplicated or quantized data, create them too.
+#step([No edge left: the clusters], code: local, focus: (15,), panel("boruvka-end"))[
+  Rounds 2 and 3 repeat lines 3--14 (@fig:boruvka). Then no subtree has an edge to
+  another, the number of subtrees stays at #ex.rounds.at(3), and the loop ends. The
+  coloured edges are a spanning forest of $G_(M, "core")$, one tree per cluster.
+]
 
-#figure(
-  diagram(
-    spacing: (3.2em, 2.4em),
-    node-stroke: 0.6pt,
-    node-shape: circle,
-    node((0, 0), $V_1$, name: <v1>),
-    node((1, 0), $V_2$, name: <v2>),
-    node((1, 1), $V_3$, name: <v3>),
-    node((0, 1), $V_4$, name: <v4>),
-    edge(<v1>, <v2>, "-|>", $0.12$, label-side: left),
-    edge(<v2>, <v3>, "-|>", $0.15$, label-side: left),
-    edge(<v3>, <v4>, "-|>", $0.14$, label-side: left),
-    edge(<v4>, <v1>, "-|>", $0.13$, label-side: left),
-  ),
-  caption: [The directed graph of the paper's Fig. 4 ($k = 2$). Each vertex's lightest
-    out-edge is drawn: $V_2$ does not list $V_1$, so instead of the mutual pair
-    $V_1 harpoons.rtlb V_2$ an undirected graph would give, the selections form a 4-cycle,
-    and pointer jumping alone cannot terminate correctly.],
-) <fig:cycle>
+== When nobody is a root <sec:cycles>
 
-Pointer jumping replaces $p$ by $p compose p$ in every round. A vertex on a tree reaches
-its root after $ceil(log_2 "depth")$ rounds and stays there. A vertex on a cycle of
-length $ell$ never reaches a root, but what it does next depends on $ell$:
+#question[Symmetry breaking assumes the picks end in a mutual pair. What if they never do?]
 
-#figure(
-  table(
-    columns: (auto, 1fr, 1fr, auto, auto),
-    align: (left, center, center, center, left),
-    table.header[Cycle][1 round: $p^2$][2 rounds: $p^4$][3 rounds: $p^8$][Result],
-    [$a -> b -> c -> a$], [$a -> c, b -> a, c -> b$], [$a -> b, b -> c, c -> a$], [$= p^2$], [never resolved],
-    [$a -> b -> c -> d -> a$], [$a -> c, b -> d, dots$], [*$a -> a, b -> b, dots$*], [$= p^4$], [four "roots"],
-  ),
-  caption: [Pointer jumping on cycles. After $t$ rounds each pointer is $p^(2^t)$, which is
-    the identity once $ell$ divides $2^t$: on a cycle whose length is a power of two,
-    every member points at itself, which is exactly how a root looks.],
-) <tab:jumping>
+#scene(width: 52%, panel("selections"))[
+  On data they always do. With an undirected graph and distinct weights, following picks
+  only ever decreases the weight, so a chain of picks can only end by returning to the
+  previous subtree: a mutual pair. The example's first round has #ex.data_pairs pairs
+  and #ex.data_longer_cycles longer cycles (left).
+
+  A kNN graph is _directed_, though: $q in cal(N)_M (p)$ does not imply
+  $p in cal(N)_M (q)$, so a subtree sees only the edges its own points list, and the
+  weights along a chain of picks need not decrease. On a random directed graph (right)
+  the picks form no pairs at all, but cycles of length
+  #ex.random_longer_cycles.map(str).join(" and ") (red). Ties, frequent in duplicated or
+  quantized data, create such cycles in real data too.
+]
+
+#scene(side: left, width: 30%, diagram(
+  spacing: (3.2em, 2.4em),
+  node-stroke: 0.6pt,
+  node-shape: circle,
+  node((0, 0), $V_1$, name: <v1>),
+  node((1, 0), $V_2$, name: <v2>),
+  node((1, 1), $V_3$, name: <v3>),
+  node((0, 1), $V_4$, name: <v4>),
+  edge(<v1>, <v2>, "-|>", $0.12$, label-side: left),
+  edge(<v2>, <v3>, "-|>", $0.15$, label-side: left),
+  edge(<v3>, <v4>, "-|>", $0.14$, label-side: left),
+  edge(<v4>, <v1>, "-|>", $0.13$, label-side: left),
+))[
+  The paper's smallest example ($k = 2$): each vertex's lightest out-edge is drawn.
+  $V_1 -> V_2$ is the lightest edge of all, so an undirected graph would make
+  $V_1, V_2$ a mutual pair. But $V_2$ does not list $V_1$, and the picks close a cycle of
+  four. None of its members points at itself, so none is a root, and pointer jumping has
+  to cope with it.
+]
+
+What pointer jumping does on a cycle of length $ell$ depends on $ell$. After $t$ rounds
+each pointer is $p^(2^t)$, which is the identity exactly when $ell$ divides $2^t$:
+
+#filmstrip(
+  (pointer-state(triangle, (("a", "b"), ("b", "c"), ("c", "a"))), [3-cycle: picks $p$]),
+  (pointer-state(triangle, (("a", "c"), ("b", "a"), ("c", "b"))), [$p^2$]),
+  (pointer-state(triangle, (("a", "b"), ("b", "c"), ("c", "a"))), [$p^4 = p$: rotates forever]),
+)
+#filmstrip(
+  caption: [Pointer jumping on cycles. On an odd cycle (top) the pointers rotate and the
+    number of unresolved subtrees stops falling, which is easy to detect. On a cycle whose
+    length is a power of two (bottom) every member ends pointing at itself, which is
+    exactly what a root looks like (shaded).],
+  (pointer-state(square, (("a", "b"), ("b", "c"), ("c", "d"), ("d", "a"))), [4-cycle: picks $p$]),
+  (pointer-state(square, (("a", "c"), ("b", "d"), ("c", "a"), ("d", "b"))), [$p^2$]),
+  (pointer-state(square, (("a", "a"), ("b", "b"), ("c", "c"), ("d", "d"))), [$p^4$: four false "roots"]),
+) <fig:cycles>
 
 #pitfall(title: [Power-of-two cycles])[
-  An implementation that detects cycles only by the number of unresolved subtrees no
-  longer decreasing catches odd cycles, but on a cycle of length 2, 4, 8, ... every
-  member "resolves" to itself and becomes a root of its own. The cycle is never merged,
-  the next round selects the same edges, no subtree merges, and Borůvka stops early with
-  a cluster split into pieces. A subtree that was not a root and whose chain returns to
-  itself is on a cycle and must stay unresolved, so that cycle breaking sees it.
-  Sequential in-place updates hide the problem, because the first member to point at
-  itself becomes the root of the others; synchronous updates (the distributed
-  algorithm) expose it.
+  An implementation that detects cycles only by the count of unresolved subtrees catches
+  odd cycles, but on a cycle of length 2, 4, 8, ... every member "resolves" to itself.
+  Taken as roots, the members never merge, the next round picks the same edges, and
+  Borůvka stops with the cluster in pieces. The fix: a subtree that was not a root and
+  whose chain returns to itself is on a cycle, and stays unresolved so that cycle joining
+  sees it. Sequential in-place updates hide the problem, because the first member to point
+  at itself becomes the others' root; the synchronous updates of the distributed
+  algorithm expose it (@sec:distributed).
 ]
 
-The subtrees left unresolved form cycles with trees hanging off them. They are joined
-by grouping them along their pointers into weakly connected groups and making one member
-of each group the root of all of it.
+The subtrees left unresolved form cycles with trees hanging off them. Line 13 of
+@alg:local joins each such group by making one member the root of all of it, and both
+ways it can go wrong produce a wrong cluster:
 
-#pitfall(title: [Grouping must use a union-find])[
-  Grouping by overwriting one representative's pointer with another's, without first
-  following each to its root, can link representatives into a new cycle of length three
-  or more, on which the pointer jumping that follows loops forever. A union-find with
-  path compression cannot.
+#story()
+#step([Grouping must link roots], grid(
+  columns: 2, column-gutter: 2.5em, row-gutter: 0.4em,
+  diagram(
+    spacing: 3.4em, node-stroke: 0.6pt, node-shape: circle, node-inset: 3pt,
+    node((0, 0), text(9pt, $r_1$), name: <r1>), node((1, 0), text(9pt, $r_2$), name: <r2>),
+    node((0.5, 0.9), text(9pt, $r_3$), name: <r3>),
+    edge(<r1>, <r2>, "-|>"), edge(<r2>, <r3>, "-|>"),
+    edge(<r3>, <r1>, "-|>", stroke: 0.6pt + cut-colour),
+  ),
+  diagram(
+    spacing: 3.4em, node-stroke: 0.6pt, node-shape: circle, node-inset: 3pt,
+    node((0, 0), text(9pt, $r_1$), name: <s1>), node((1, 0), text(9pt, $r_2$), name: <s2>),
+    node((0.5, 0.9), text(9pt, $r_3$), name: <s3>, fill: core-colour.lighten(85%)),
+    edge(<s1>, <s2>, "-|>"), edge(<s2>, <s3>, "-|>"),
+  ),
+  small[overwriting pointers], small[union-find],
+))[
+  Grouping joins the members along their pointers. Overwriting one representative's
+  pointer with another's, without first following each to its root, can close a loop
+  among representatives (red), and the pointer jumping that follows never ends: a run on
+  5 ranks hung this way. A union-find links only roots, so each group stays a tree with
+  one root (shaded).
 ]
 
-== Minimum edges are not needed
+#step([Reading past the list], code: local, focus: (13,), window: 2, diagram(
+  spacing: (2.2em, 3.2em), node-stroke: 0.6pt, node-inset: 4.5pt,
+  node((0, 0), text(9pt, $u_1$), name: <c0>), node((1, 0), text(9pt, $u_2$), name: <c1>),
+  node((2, 0), text(9pt, $u_3$), name: <c2>),
+  node((3, 0), text(8pt, fill: cut-colour)[$0$], name: <c3>, stroke: (paint: cut-colour, dash: "dashed", thickness: 0.6pt)),
+  node((1, -0.55), small[unresolved subtrees], stroke: none),
+  node((3, -0.55), text(7.5pt, fill: cut-colour)[one past the end], stroke: none),
+  node((1.5, 1), small[subtree of point 0], name: <z>, fill: rgb("#f6d7d2")),
+  edge(<c0>, <z>, "-|>", stroke: 0.6pt + cut-colour), edge(<c1>, <z>, "-|>", stroke: 0.6pt + cut-colour),
+  edge(<c2>, <z>, "-|>", stroke: 0.6pt + cut-colour),
+  edge(<c3>, <z>, "--|>", stroke: 0.6pt + cut-colour, text(7.5pt, fill: cut-colour)[read as the target], label-side: left),
+))[
+  The shared-memory grouping read one element past its list of unresolved subtrees. The
+  stray value was usually 0, so it formed no groups and pointed every unresolved subtree
+  at the subtree of point 0, merging them into whatever cluster point 0 was in.
+  AddressSanitizer reported the read. Only multithreaded runs reach this line: sequential
+  in-place updates collapse cycles on their own.
+]
 
-The paper's minimum-edge update (`pwrite`) is a compare-and-swap loop. If the compare
-and the write are not one atomic operation, two threads updating the same subtree can
-leave an edge that is not the lightest, or even a target from one write with the
-weight of another. Neither affects the clusters:
+== Picks need not be lightest
+
+The paper's minimum-edge update (`pwrite`) is a compare-and-swap loop. If the compare and
+the write are not one atomic operation, two threads proposing to the same subtree can
+leave an edge that is not the lightest, or the target of one proposal with the weight of
+another. Neither changes the clusters:
 
 #proposition(title: [Borůvka with arbitrary outgoing edges])[
   Suppose each round, every subtree with at least one outgoing edge records _some_
@@ -335,22 +581,51 @@ weight of another. Neither affects the clusters:
   when no subtree has an outgoing edge, that is, when each subtree is a whole component.
 ]
 
-Minimality matters for the tree (and for hierarchical clustering), not for the
-clusters. The proposition also explains why the result does not depend on thread
-scheduling, though the spanning tree, and with it the order in which roots are found,
-does. Labels are therefore renumbered at the end (@sec:numerics).
+Minimality matters for the tree, and for hierarchical clustering, not for the clusters.
+The proposition also explains why the clusters do not depend on thread scheduling though
+the trees, and the order in which roots are found, do; labels are therefore renumbered at
+the end (@sec:numerics).
 
-= The distributed algorithm <sec:distributed>
+#takeaway[Borůvka finds the components in $O(log n)$ rounds of "pick an edge, merge
+  along the picks", provided the cycles of picks that a directed graph creates are
+  detected and joined.]
 
-== Data layout
+= Many machines <sec:distributed>
 
-With $P$ ranks, the points are split into contiguous blocks in rank order: with
-$n_0 = ceil(n slash P)$, rank $r$ holds points $r n_0, dots, (r+1) n_0 - 1$, the last
+#question[The graph does not fit on one machine. What has to change?]
+
+With $P$ ranks the points are split into contiguous blocks in rank order: with
+$n_0 = ceil(n slash P)$, rank $r$ holds points $r n_0, dots, (r + 1) n_0 - 1$, the last
 nonempty rank holds the remainder, and trailing ranks may hold nothing (7 points on 6
 ranks leave ranks 4 and 5 empty). Each rank stores only its own rows, with global
-neighbor ids. An edge to a point of another rank is a _cut edge_.
+neighbor ids. The plan: grow trees inside each rank without talking, then treat each tree
+as a single vertex and run Borůvka once more across ranks, on a graph far smaller than
+the original.
 
-== The inexact minimum spanning tree
+#story()
+#step([Blocks and cut edges], code: one-rank, focus: ("in", 1), window: 2, panel("ranks"))[
+  The running example on #ex.n_ranks ranks, with points numbered left to right so that
+  blocks are strips. Each rank finds its core points alone. An edge to a point of another
+  rank is a _cut edge_ #swatch(cut-colour, shape: "line"): there are #ex.n_cut_edges.
+]
+
+#step([Local Borůvka, without communication], code: one-rank, focus: (2,), window: 2, panel("local-subtrees"))[
+  Each rank runs @alg:local on its block, recording cut edges instead of following them.
+  This gives #ex.n_local_subtrees subtrees, some of a single point: a cluster that spans
+  ranks is still in pieces.
+]
+
+#step([Subtrees become vertices], code: one-rank, focus: (3, 4), window: 2, panel("super-vertices"))[
+  Each subtree gets a global id, numbered after those of lower ranks, and the rank that
+  numbered it _owns_ it. Each cut edge between points becomes an edge between their
+  subtrees, which only the far point's rank can name: #ex.n_links links here.
+]
+
+#step([Cut MST: the same clusters], code: one-rank, focus: (5, 6), window: 2, panel("rank-clusters"))[
+  Borůvka once more, over the subtrees and across ranks (@alg:cut), and every point takes
+  its subtree's root. The clusters are those found on one rank, as the next theorem
+  guarantees for any split.
+]
 
 #theorem(title: [inexact MST, Theorem 3.6])[
   Partition the vertices into groups. Build a minimum spanning forest of each group
@@ -366,57 +641,46 @@ neighbor ids. An edge to a point of another rank is a _cut edge_.
   connects. Conversely every forest edge is a graph edge.
 ]
 
-For kNN-DBSCAN the groups are the ranks. The local stage needs no communication, and
-the cut stage works on far fewer vertices (subtrees) than points. The theorem also states
-the property an implementation must satisfy: *the clusters of core points do not depend
-on the number of ranks or on how points are assigned to them.*
+The theorem is also the property an implementation must keep: *the clusters of core
+points do not depend on the number of ranks or on how points are assigned to them.*
+Border points are the exception, by DBSCAN's own ambiguity: one with core neighbors in
+several clusters prefers a neighbor on its own rank, so its cluster may change with the
+rank count.
 
-#figure(
-  diagram(
-    spacing: (1.2em, 2.3em),
-    node-stroke: 0.6pt,
-    node-corner-radius: 3pt,
-    node-inset: 6pt,
-    node((0, 0), [I. Core points], name: <s1>),
-    node((0, 1), [II. Local MST (OpenMP)], name: <s2>),
-    node((0, 2), [III. Global subtree ids], name: <s3>),
-    node((0, 3), [IV. Cut edges relabelled], name: <s4>),
-    node((0, 4), [V. Cut MST (Borůvka over subtrees)], name: <s5>),
-    node((0, 5), [VI. Border points], name: <s6>),
-    edge(<s1>, <s2>, "-|>", [local only], label-side: left, label-sep: 0.8em),
-    edge(<s2>, <s3>, "-|>", [`Allgather` subtree counts], label-side: left, label-sep: 0.8em),
-    edge(<s3>, <s4>, "-|>", [`Alltoallv` ask owners of far endpoints], label-side: left, label-sep: 0.8em),
-    edge(<s4>, <s5>, "-|>", [`Alltoallv`, `Allgatherv` each round], label-side: left, label-sep: 0.8em),
-    edge(<s5>, <s6>, "-|>", [`Alltoallv` for remote neighbors], label-side: left, label-sep: 0.8em),
-  ),
-  caption: [Stages of `knndbscan()` on each rank, with the communication each needs.],
-) <fig:stages>
+#scene(width: 40%, diagram(
+  spacing: (1.2em, 2.1em),
+  node-stroke: 0.6pt,
+  node-corner-radius: 3pt,
+  node-inset: 5pt,
+  node((0, 0), small[Core points], name: <s1>),
+  node((0, 1), small[Local MST (OpenMP)], name: <s2>),
+  node((0, 2), small[Global subtree ids], name: <s3>),
+  node((0, 3), small[Cut edges relabelled], name: <s4>),
+  node((0, 4), small[Cut MST], name: <s5>),
+  node((0, 5), small[Border points], name: <s6>),
+  edge(<s1>, <s2>, "-|>", small[local only], label-side: left),
+  edge(<s2>, <s3>, "-|>", small[`Allgather`], label-side: left),
+  edge(<s3>, <s4>, "-|>", small[`Alltoallv`], label-side: left),
+  edge(<s4>, <s5>, "-|>", small[`Alltoallv`, `Allgatherv` per round], label-side: left),
+  edge(<s5>, <s6>, "-|>", small[`Alltoallv` if remote], label-side: left),
+))[
+  Each rank runs the stages of @alg:driver in order, and only these transitions
+  communicate. The communication is collective throughout: `Allgather` and `Allgatherv`
+  for counts and roots, `Alltoallv` for edge proposals and pointer queries, and `Gatherv`
+  and `Scatterv` for the rare cycle joining on rank 0.
 
-== Stages
+  The paper's analysis gives a local-stage work of $O(n/P dot M + (n/P) log(n/P))$ per
+  rank, and cut-stage communication that grows with the number of cut edges per rank and
+  with $log P$ rounds. Cut edges increase with the dimension of the data, which is what
+  limits strong scaling in high dimensions.
+]
 
-@alg:driver is one rank's whole run. Stages I and II need no communication; stage III
-gives every subtree a global id, numbering each rank's subtrees after those of lower
-ranks, and the rank that numbered a subtree _owns_ it from then on; stage IV rewrites
-each cut edge between points as an edge between their subtrees, which only the far
-point's rank knows. Border points may join any adjacent cluster (@sec:dbscan); one on
-several ranks prefers a core neighbor on its own rank, which is why border assignments,
-unlike clusters of core points, may differ between rank counts.
+== Borůvka across ranks
 
-#let driver = (
-  require[this rank's rows of the kNN graph, sorted, without the point itself; $epsilon$; $M$],
-  ensure[a cluster label for each of this rank's points, $-1$ for noise],
-  ln(0, [$C <- {i : "distance in column" M - 1 "of row" i <= epsilon}$], note: [I. core points (@lem:classify)]),
-  ln(0, [$R$, cut edges $<-$ local Borůvka over $C$], note: [II. @alg:local]),
-  ln(0, [number this rank's subtrees after those of lower ranks], note: [III. `Allgather`]),
-  ln(0, [rewrite each cut edge $(i, j)$ as $(R[i], R[j])$], note: [IV. `Alltoallv` to $j$'s rank]),
-  ln(0, [roots $<-$ cut MST over the subtrees], note: [V. @alg:cut]),
-  ln(0, [$R[i] <-$ root of $R[i]$ for every $i in C$]),
-  ln(0, [*parallel for* each non-core point $i$], note: [VI. border points]),
-  ln(1, [$q <-$ first core neighbor of $i$ within $epsilon$, preferring one on this rank], note: [`Alltoallv` if remote]),
-  ln(1, [$R[i] <- R[q]$ if $q$ exists, otherwise $-1$], note: [noise]),
-)
-
-#algorithm(caption: [kNN-DBSCAN on one rank: `knndbscan()` (paper's Algorithm 1).], pseudocode(driver)) <alg:driver>
+The cut MST is @alg:local with each step spread over the ranks: the owner of a subtree
+collects its proposals, and pointer jumping asks the owner of $p(u)$ for $p(p(u))$. Every
+rank updates its pointers at once, which is where the power-of-two cycles of
+@fig:cycles appear.
 
 #let cut-mst = (
   require[subtrees, each owned by one rank; cut edges $(u, v, w)$ between subtree ids],
@@ -433,26 +697,50 @@ unlike clusters of core points, may differ between rank counts.
   ln(1, [share the new roots; relabel cut edges, dropping those inside one subtree], note: [`Allgatherv`]),
   ln(0, [*until* the global number of subtrees does not decrease]),
 )
+#let cut = (label: <alg:cut>, lines: cut-mst)
 
-#algorithm(caption: [Cut MST: Borůvka over subtrees across ranks (paper's Algorithm 4).], pseudocode(cut-mst)) <alg:cut>
+#algorithm(caption: [Cut MST: Borůvka over subtrees across ranks (paper's Algorithm 4).],
+  pseudocode(cut-mst)) <alg:cut>
 
-#implementation(title: [Communication and cost])[
-  The communication is collective throughout: `Allgather` and `Allgatherv` for counts and
-  roots, `Alltoallv` for edge proposals and pointer queries, `Gatherv` and `Scatterv` for
-  the rare cycle breaking on rank 0. The paper's analysis gives a local-stage work of
-  $O(n/P dot M + (n/P) log(n/P))$ per rank, and cut-stage communication that grows with
-  the number of cut edges per rank and with $log P$ rounds; cut edges increase with the
-  dimension of the data, which is what limits strong scaling in high dimensions.
+#story()
+#step([An odd cycle stalls], code: cut, focus: (5, 6, 8, 9), window: 1, grid(
+  columns: 3, column-gutter: 1fr, row-gutter: 0.5em,
+  pointer-state(triangle, (("a", "b"), ("b", "c"), ("c", "a"))),
+  pointer-state(triangle, (("a", "c"), ("b", "a"), ("c", "b"))),
+  pointer-state(triangle, (("a", "b"), ("b", "c"), ("c", "a"))),
+  small[picks $p$], small[$p^2$], small[$p^4 = p$],
+))[
+  Three subtrees, owned by any ranks, pick each other in a ring. Every round asks the
+  owners for the pointers' pointers, which only rotate: the count of unresolved subtrees
+  stops falling, the stall is detected, and rank 0 groups the ring with a union-find.
 ]
 
-The library used from Python runs the same code on a single rank, through a stand-in
-that implements each collective for a one-rank communicator, so stages III--V degenerate
-to bookkeeping. The MPI command-line program runs it on any number of ranks.
+#step([A power-of-two cycle must stay unresolved], code: cut, focus: (5, 6, 7), window: 1, grid(
+  columns: 3, column-gutter: 1fr, row-gutter: 0.5em,
+  pointer-state(square, (("a", "b"), ("b", "c"), ("c", "d"), ("d", "a"))),
+  pointer-state(square, (("a", "c"), ("b", "d"), ("c", "a"), ("d", "b"))),
+  pointer-state(square, (("a", "a"), ("b", "b"), ("c", "c"), ("d", "d"))),
+  small[picks $p$], small[$p^2$], small[$p^4$: false "roots"],
+))[
+  Four subtrees in a ring point at themselves after two rounds and would pass for four
+  roots; the cluster would stay in four pieces on some rank counts (one cluster became
+  six on 7 ranks). Line 7 keeps a subtree whose chain returned to itself unresolved, so
+  the ring stalls like an odd one and is grouped.
+]
 
-= Numerical conventions and invariants <sec:numerics>
+The Python package runs the same code on a single rank, through a stand-in that
+implements each collective for a one-rank communicator, so stages III--V become
+bookkeeping. The MPI command-line program runs it on any number of ranks.
 
-The paper's definitions leave a few decisions to the implementation. Each of the
-following is fixed by the code and checked by a test.
+#takeaway[Split the points, grow trees locally without talking, then run Borůvka once
+  more over the trees: the clusters never depend on the split (@thm:inexact).]
+
+= Details that decide correctness <sec:numerics>
+
+#question[The definitions are exact. Where can code still get them wrong?]
+
+The paper's definitions leave a few decisions to the implementation. Each is fixed by the
+code and checked by a test; the first two were wrong in the original implementation.
 
 #invariant(title: [the radius test])[
   A distance equal to $epsilon$ is within $epsilon$ ($<=$, as in @lem:classify and in
@@ -461,10 +749,26 @@ following is fixed by the code and checked by a test.
   nearest `float32`.
 ]
 
+#story()
+#step([Distances exactly at $epsilon$], code: one-rank, focus: (1,), window: 1, width: 56%, panel("eps-boundary"))[
+  On a unit grid with $epsilon = 1$ and $M = #ex.eps_grid.min_samples$, each interior
+  point has four neighbors at distance exactly $epsilon$. With $<=$ the interior points
+  are core #swatch(core-colour) and the rest border #swatch(border-colour) or noise. The
+  strict $<$ of the original implementation finds no core point at all. Grids and
+  rounded distances put many points exactly at $epsilon$.
+]
+
 #invariant(title: [no finite "no edge yet" weight])[
   The weight that marks a subtree without a candidate edge is $+infinity$. Any finite
   sentinel $s$ silently drops every edge of weight at least $s$, so the result would
   depend on the units of the data.
+]
+
+#step([A finite "no edge" weight], code: local, focus: (3,), window: 2, width: 56%, panel("sentinel"))[
+  With a finite $s$, edges of weight $s$ or more (faint red) can never be picked, and
+  clusters fall apart, here into #ex.sentinel_pieces pieces. The original $s = 10^4$ did
+  this to data whose neighbor distances reach $10^4$, such as raw physical units; here
+  $s$ is the 60th percentile of the example's edge weights.
 ]
 
 #invariant(title: [deterministic labels])[
@@ -492,35 +796,42 @@ following is fixed by the code and checked by a test.
   that range.
 ]
 
-= Verifying an implementation <sec:verification>
+#takeaway[Compare with $<=$ in the graph's precision, never cap edge weights, and
+  renumber the labels: then the result depends only on the graph, $epsilon$ and $M$.]
 
-Clustering output has no simple "expected value", so the project checks the
-implementation against the paper's statements rather than against fixed outputs.
+= How we know it is right <sec:verification>
 
-/ Reference implementation: the definitions of @sec:knn computed directly with sparse
-  connected components (`tests/reference.py`), written from the paper, never from the
-  C++ code. The library must reproduce its core points, clusters and noise exactly, and
-  give each border point an allowed cluster.
-/ Random directed graphs: graphs whose distances obey no triangle inequality and whose
-  edges are rarely mutual, with ties and zero distances. They make Borůvka meet the
-  cycles of @sec:cycles far more often than real data does, and they were the most
-  effective tests: they found every defect in the cycle handling.
-/ Theorems as tests: core, border and noise points equal scikit-learn's DBSCAN
-  (@lem:classify), clusters refine DBSCAN's and coincide when the counts match
-  (@thm:refine), and growing $epsilon$ only adds core points and merges clusters.
-/ Metamorphic tests: the invariances of @sec:numerics, applied exactly: scaling by powers
-  of two (exact in floating point, up to $2^(plus.minus 120)$), integer distances under
-  affine and quadratic maps, random permutations, truncated graphs.
-/ Ranks and threads: the MPI program on 1 to 7 ranks, with points shuffled (most edges
-  cut) or grouped by cluster (few cut), with ranks that own no points, compared with the
-  reference (@thm:inexact); repeated runs and thread counts must agree.
-/ Sanitizers: the library, the MPI program and C tests built with AddressSanitizer and
-  UndefinedBehaviorSanitizer and run against all of the above. Sanitized builds change
-  memory layout and timing, which exposed a data race that optimized builds hid.
+#question[A clustering has no expected value to compare with. How is it tested?]
+
+Against the paper's statements, not against stored outputs. Six kinds of test, each run
+on the library, the MPI program and the C API:
+
+#cards(
+  ([Reference implementation], [The definitions of @sec:reach computed directly with
+    sparse connected components (`tests/reference.py`), written from the paper, never
+    from the C++ code. Core points, clusters and noise must match exactly, and each
+    border point must join an allowed cluster.]),
+  ([Random directed graphs], [Distances with no triangle inequality, rarely mutual
+    edges, ties and zeros. Their picks form the cycles of @sec:cycles far more often than
+    data does, and they found every defect in the cycle handling.]),
+  ([Theorems as tests], [Classes equal scikit-learn's DBSCAN (@lem:classify); clusters
+    refine DBSCAN's and coincide when the counts match (@thm:refine); a larger $epsilon$
+    only adds core points and merges clusters.]),
+  ([Metamorphic tests], [The invariances of @sec:numerics, applied exactly: scaling by
+    powers of two (exact in floating point, up to $2^(plus.minus 120)$), integer distances
+    under affine and quadratic maps, permutations, truncated graphs.]),
+  ([Ranks and threads], [The MPI program on 1 to 7 ranks, with points shuffled (most
+    edges cut) or grouped (few cut) and with ranks that own nothing, compared with the
+    reference (@thm:inexact); repeated runs and thread counts must agree.]),
+  ([Sanitizers], [Everything above under AddressSanitizer and
+    UndefinedBehaviorSanitizer. Their builds change memory layout and timing, which
+    exposed a data race that optimized builds hid.]),
+)
 
 The original implementation, which produced the paper's results, passed its own
-experiments; the tests above found the following defects, all fixed in this implementation. None is in the
-method; each is a way the method's assumptions can be broken in code.
+experiments. These tests found the following defects in it, all fixed in this
+implementation. None is in the method; each is a way code can break the method's
+assumptions, and each appears earlier in this companion where it arises.
 
 #figure(
   table(
@@ -530,49 +841,96 @@ method; each is a way the method's assumptions can be broken in code.
     [Strict comparison $d < epsilon$], [points exactly at $epsilon$ were not core (grid with $epsilon = 1$: none instead of 16)], [Lemma 3.1 test on a grid],
     [Finite sentinel weight $10^4$], [edges of weight $>= 10^4$ never merged (data scaled by $2^16$: 109 clusters instead of 3)], [scaling by powers of two],
     [Power-of-two cycles in distributed pointer jumping], [clusters split on some rank counts (one cluster became 6 on 7 ranks)], [random graphs over rank counts],
-    [Grouping by overwriting representatives], [endless loop in cycle breaking (5 ranks)], [random graphs over rank counts],
+    [Grouping by overwriting representatives], [endless loop in cycle joining (5 ranks)], [random graphs over rank counts],
     [Local cycle grouping read past its array], [subtrees on cycles merged into point 0's cluster], [AddressSanitizer],
     [Loop variable shared by threads], [core points labelled with another thread's root], [sanitized builds, thread sweep],
     [Every rank truncated the output file], [empty labels file on oversubscribed ranks], [MPI tests on CI runners],
   ),
-  caption: [Defects found in the original implementation by the tests of @sec:verification.],
+  caption: [Defects found in the original implementation.],
 ) <tab:defects>
+
+The last two depended only on how threads or ranks were scheduled, which is why they
+appeared under sanitizers and on busy CI machines but rarely in ordinary runs:
+
+#story()
+#step([A loop variable shared by threads], code: one-rank, focus: (6,), window: 1, table(
+  columns: 4,
+  align: (center, left, left, center),
+  table.header[][thread A][thread B][shared $u$],
+  [1], [$u <- R[p]$], [], [$R[p]$],
+  [2], [], [$u <- R[q]$], [$R[q]$],
+  [3], [#text(fill: cut-colour)[$R[p] <- "root"(u)$]], [], [$R[q]$],
+))[
+  The loop that gives each core point its cluster used one variable $u$ for all threads.
+  Thread B could overwrite it between thread A's read and A's use, and point $p$ received
+  the cluster of B's point $q$. Declaring $u$ inside the loop makes it private to each
+  iteration.
+]
+
+#step([One writer for the output file], table(
+  columns: 3,
+  align: (center, left, left),
+  table.header[][rank 0][rank 2 (late)],
+  [1], [open, truncate], [_still computing_],
+  [2], [write $n$ labels], [],
+  [3], [], [#text(fill: cut-colour)[open, truncate]],
+))[
+  In the command-line program, outside the algorithm: every rank opened, and so emptied,
+  the labels file, but only rank 0 wrote it. A rank that reached the open after rank 0
+  had finished left an empty file. Only rank 0 may open it.
+]
 
 #note(title: [A lesson for testing parallel graph code])[
   All the cycle defects lived in paths that real data rarely reaches: exact kNN graphs
-  of continuous data produce mostly mutual pairs, and a few ranks rarely produce cycles
-  whose length is a power of two. Randomized inputs that are valid but adversarial, swept
-  over thread and rank counts and compared with an independent reference, reached them
-  within seconds.
+  of continuous data produce mostly mutual pairs (@sec:cycles), and a few ranks rarely
+  produce cycles whose length is a power of two. Randomized inputs that are valid but
+  adversarial, swept over thread and rank counts and compared with an independent
+  reference, reached them within seconds.
 ]
 
-= Performance <sec:performance>
+#takeaway[Test against the theorems with an independent reference, on adversarial
+  random graphs, across thread and rank counts, under sanitizers.]
 
-The paper reports, on TACC's Frontera, one billion 3-D points clustered in under a
-second on 28K cores, 65 billion 20-D points in under 40 s on 114,688 cores, and runs up to
-37× faster than PDBSCAN @patwary2012 on 4 million 20-D points. Strong scaling of 64
-million points from 4 to 256 ranks gives speedups of 13.8 (3-D), 16.8 (5-D) and 22.2
-(32-D). Two observations shape how the method is used:
+= Where the time goes <sec:performance>
 
-- *The graph dominates.* Building the $k$-NNG of 64 million 5-D points with $k = 100$ takes
-  about 400 times longer than clustering it, so the graph should be computed once and
-  reused across $epsilon$ and $M$ (@sec:knn). Approximate graphs are acceptable: kNN-DBSCAN is
-  defined on whatever graph it is given, and in the paper's experiments lowering the
-  graph's accuracy to 75 % did not change the clustering quality.
-- *Cut edges limit scaling.* With more ranks, local work shrinks but the fraction of cut
-  edges, and the communication per Borůvka round, grows; it grows with dimension too.
+#question[What does it cost, and what should be computed only once?]
+
+#figure(
+  panel("performance", width: 92%),
+  caption: [Left: building the kNN graph of 64 million 5-D points with $k = 100$ takes
+    about 400 times longer than clustering it. Right: strong scaling of 64 million points
+    from 4 to 256 ranks, against the ideal 64. Both from the paper's experiments on TACC's
+    Frontera.],
+) <fig:performance>
+
+The graph dominates, so compute it once and reuse it across $epsilon$ and $M$
+(@sec:reach). Approximate graphs are acceptable: kNN-DBSCAN is defined on whatever graph
+it is given, and in the paper's experiments lowering the graph's accuracy to 75 % did not
+change the clustering quality. Scaling is limited by cut edges: with more ranks, local
+work shrinks but the fraction of cut edges, and the communication per Borůvka round,
+grows, and it grows with dimension too. At scale, the paper clusters one billion 3-D
+points in under a second on 28K cores, 65 billion 20-D points in under 40 s on 114,688
+cores, and runs up to 37× faster than PDBSCAN @patwary2012 on 4 million 20-D points.
 
 On a single node, the clustering stage of the Python package takes about 0.9 s for a
 4-million-point graph with 19 neighbors per point on one thread and 0.2--0.26 s on
 eight, with no further gain at 16 on a 16-thread laptop. Checking the input graph and
 renumbering labels add 5--10 %. Logging costs nothing when disabled.
 
-= Using it
+= Using it <sec:using>
 
-Choose $M$ first, as for DBSCAN (larger $M$ smooths the density estimate); then choose
-$epsilon$ from the sorted distances to each point's $(M-1)$-th neighbor, at the elbow of
-that curve @schubert2017. Compute a graph with $k >= M - 1$, larger if several $M$ will
-be tried, and cluster it for each candidate:
+#question[Which $epsilon$ and $M$?]
+
+#scene(width: 52%, panel("kdist"))[
+  Choose $M$ first, as for DBSCAN: a larger $M$ smooths the density estimate. Then sort
+  the points by the distance to their $(M - 1)$-th neighbor, the number that decides
+  whether a point is core (@lem:classify). Dense points form the flat part of the curve
+  and sparse points its steep end; an $epsilon$ at the elbow @schubert2017 makes the flat
+  part core #swatch(core-colour).
+]
+
+Compute a graph with $k >= M - 1$, larger if several $M$ will be tried, and cluster it
+for each candidate:
 
 ```python
 from knndbscan import KNNDBSCAN, knn_dbscan, knn_dbscan_from_graph
@@ -590,275 +948,3 @@ mpiexec -n 64 knndbscan -n N -e eps -m M -k K -t threads -i graph.txt -o labels.
 ```
 
 #bibliography("references.yml", title: [References])
-
-
-// ------------------------------------------------------------------------------- appendix
-#pagebreak()
-#counter(heading).update(0)
-#set heading(numbering: "A.1", supplement: [Appendix])
-
-// Numbers about the example, written by figures/make_figures.py with the panels.
-#let ex = json("figures/example.json")
-#let panel(name) = image("figures/" + name + ".svg", width: 100%)
-#let local = (label: <alg:local>, lines: local-boruvka)
-#let one-rank = (label: <alg:driver>, lines: driver)
-#let cut = (label: <alg:cut>, lines: cut-mst)
-#let red = rgb("#c0392b")
-
-// Pointer states drawn as a small graph: `pointers` maps each node to its target; a node
-// pointing at itself looks like a root, and is drawn shaded with a loop.
-#let pointer-state(positions, pointers) = {
-  let roots = pointers.filter(((u, v)) => u == v).map(((u, v)) => u)
-  diagram(
-    spacing: (2.3em, 2.3em),
-    node-stroke: 0.6pt,
-    node-shape: circle,
-    node-inset: 3pt,
-    ..positions.pairs().map(((name, pos)) => node(
-      pos, text(9pt)[$#name$], name: label(name), fill: if name in roots { rgb("#f6d7d2") } else { white },
-    )),
-    ..pointers.map(((u, v)) => if u == v {
-      edge(label(u), label(u), "-|>", bend: 130deg, stroke: 0.6pt + red)
-    } else {
-      edge(label(u), label(v), "-|>", bend: 14deg, stroke: 0.6pt)
-    }),
-  )
-}
-#let square = (a: (0, 0), b: (1, 0), c: (1, 1), d: (0, 1))
-#let triangle = (a: (0, 0), b: (1, 0), c: (0.5, 0.9))
-#let states(..pairs) = grid(
-  columns: pairs.pos().len(),
-  column-gutter: 1fr,
-  row-gutter: 0.5em,
-  ..pairs.pos().map(((d, _)) => align(center + horizon, d)),
-  ..pairs.pos().map(((_, c)) => align(center, text(8pt, c))),
-)
-
-= The algorithm in pictures <app:pictures>
-
-This appendix runs the algorithm on a small example and tells it as a sequence of steps.
-Each step shows the pseudocode on the left with the lines the step is about highlighted,
-and on the right what those lines do to the example, so the code and its effect can be
-read together. The example has #ex.n_points points in three blobs with $M = #ex.min_samples$
-and $epsilon = #ex.eps$. Its panels are computed, not drawn: `figures/make_figures.py`
-replays Borůvka's rounds exactly as @alg:local states them, stops unless the replay finds
-the library's clusters, and writes the numbers quoted here.
-
-#step-counter.update(0)
-== One rank, from graph to labels
-
-#step([The input: a directed kNN graph], code: one-rank, focus: ("in",), panel("knn-graph"))[
-  Each point lists its $M - 1 = #(ex.min_samples - 1)$ nearest neighbors in order of
-  distance, itself excluded: one arrow per entry. The graph is _directed_: $q$ among $p$'s
-  neighbors does not put $p$ among $q$'s, which is why an isolated point can still have
-  arrows leaving it.
-]
-
-#step([Core points], code: one-rank, focus: (1,), panel("core-points"))[
-  A point is core when its $(M - 1)$-th neighbor is within $epsilon$: its $epsilon$-disk
-  (dashed) holds $M$ points, itself included. The test reads one column of each row and
-  needs no communication. Here #ex.n_core of the #ex.n_points points are core; the grey
-  disk holds too few points.
-]
-
-#step([Clusters of core points], code: one-rank, focus: (2, 3, 4, 5, 6), panel("components"))[
-  Keep the edges between core points and forget their direction: the components of this
-  graph, $G_(M, "core")$, are the clusters (@thm:mst). Lines 2--6 find them as a spanning
-  forest, on one rank by Borůvka (@app:boruvka) and on several by local trees joined across
-  ranks (@app:ranks). There are #ex.n_clusters.
-]
-
-#step([Border points and noise], code: one-rank, focus: (7, 8, 9), panel("labels"))[
-  Each remaining point takes the cluster of its first core neighbor within $epsilon$
-  (ringed; one is joined to the neighbor it follows), or is noise, $-1$, if it has none.
-  Here #ex.n_border points are border points and #ex.n_noise are noise.
-]
-
-#step([Not DBSCAN], panel("dbscan"))[
-  DBSCAN on the same data finds #ex.n_dbscan_clusters clusters. The red pairs are core
-  points within $epsilon$ of each other that are not among each other's $M - 1$ nearest
-  neighbors: DBSCAN links them, kNN-DBSCAN does not, so it keeps two blobs apart. The
-  core points and border points are the same in both methods; only the links differ,
-  and kNN-DBSCAN's clusters always refine DBSCAN's (@thm:refine).
-]
-
-#step-counter.update(0)
-== Borůvka, round by round <app:boruvka>
-
-#step([Round 1: every subtree picks its lightest edge], code: local, focus: (1, 3, 4, 5, 6, 7, 8, 9), panel("boruvka-1"))[
-  Every core point starts as a subtree of its own (dark). It scans its row from the left
-  and stops at the first core neighbor in another subtree; rows are sorted, so that is
-  its lightest edge (arrows). Red arrows mark pairs of subtrees that chose each other:
-  there are #ex.mutual.at(0).
-]
-
-#step([Round 1: merge along the chosen edges], code: local, focus: (10, 11, 12, 13, 14), panel("boruvka-merged-1"))[
-  Each subtree points to the subtree its edge reaches. In a mutual pair the smaller id
-  points at itself and becomes a root; pointer jumping then takes every subtree to the
-  root of its tree, and relabelling hands that root to every point. The
-  #ex.rounds.at(0) subtrees become #ex.rounds.at(1), and each new subtree holds exactly
-  one mutual pair, its root. When selections close a longer cycle instead, nothing is a
-  root: @app:defects shows what then happens.
-]
-
-#step([Round 2], code: local, focus: (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14), panel("boruvka-2"))[
-  The same steps on the merged subtrees (coloured; their edges are the tree so far). A
-  point whose next neighbor is now in its own subtree moves past it, and $L[i]$ never moves
-  back, so every row is scanned once over all rounds. The #ex.rounds.at(1) subtrees
-  become #ex.rounds.at(2).
-]
-
-#step([Round 3], code: local, focus: (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14), panel("boruvka-3"))[
-  #ex.rounds.at(2) subtrees become #ex.rounds.at(3). Each round at least halves the
-  subtrees that can still merge, so the rounds grow like $log n$.
-]
-
-#step([No edge left: the clusters], code: local, focus: (15,), panel("boruvka-end"))[
-  The next round finds no edge between subtrees, the number of subtrees stays at
-  #ex.rounds.at(3), and the loop ends. The coloured edges are a spanning forest of
-  $G_(M, "core")$ with one tree per cluster.
-]
-
-#step-counter.update(0)
-== Across ranks <app:ranks>
-
-#step([Blocks and cut edges], code: one-rank, focus: ("in", 1), panel("ranks"))[
-  The points are split into #ex.n_ranks contiguous blocks of rows, one per rank (here
-  numbered left to right, so blocks are strips). Each rank finds its core points alone.
-  An edge to a point of another rank is a _cut edge_ (red): there are #ex.n_cut_edges.
-]
-
-#step([Local Borůvka, without communication], code: one-rank, focus: (2,), panel("local-subtrees"))[
-  Each rank runs @alg:local on its block and records cut edges instead of following them.
-  The result is #ex.n_local_subtrees subtrees, some a single point: a cluster that spans
-  ranks is still in pieces.
-]
-
-#step([Subtrees become vertices], code: one-rank, focus: (3, 4), panel("super-vertices"))[
-  Each subtree gets a global id, owned by the rank that numbered it, and each cut edge
-  between points becomes an edge between their subtrees (#ex.n_links links here). The
-  cut MST works on this much smaller graph.
-]
-
-#step([Cut MST: the same clusters], code: one-rank, focus: (5, 6), panel("rank-clusters"))[
-  Borůvka once more, over the subtrees and across ranks (@alg:cut), and every point takes
-  its subtree's root. The clusters are those of one rank: by @thm:inexact the split never
-  changes them, however the points are distributed.
-]
-
-#step-counter.update(0)
-== Where implementations go wrong <app:defects>
-
-Each step below is a row of @tab:defects, shown at the line where it arises.
-
-#step([A cycle has no root], code: cut, focus: (5, 6, 8, 9), states(
-  (pointer-state(triangle, (("a", "b"), ("b", "c"), ("c", "a"))), [selections $p$]),
-  (pointer-state(triangle, (("a", "c"), ("b", "a"), ("c", "b"))), [$p^2$]),
-  (pointer-state(triangle, (("a", "b"), ("b", "c"), ("c", "a"))), [$p^4 = p$]),
-))[
-  In a directed graph three subtrees can each choose the next: $a -> b -> c -> a$. No pair
-  is mutual, so nothing becomes a root, and pointer jumping rotates the pointers forever.
-  The number of unresolved subtrees stops falling; the stall is detected and the cycle is
-  grouped on rank 0.
-]
-
-#step([A power-of-two cycle looks like roots], code: cut, focus: (5, 6, 7), states(
-  (pointer-state(square, (("a", "b"), ("b", "c"), ("c", "d"), ("d", "a"))), [selections $p$]),
-  (pointer-state(square, (("a", "c"), ("b", "d"), ("c", "a"), ("d", "b"))), [$p^2$]),
-  (pointer-state(square, (("a", "a"), ("b", "b"), ("c", "c"), ("d", "d"))), [$p^4$: four "roots"]),
-))[
-  On a 4-cycle, two rounds of jumping take every pointer to its own node, and a node
-  pointing at itself is what a root looks like (shaded). Taken as roots, the four
-  subtrees never merge, the next round selects the same edges, and the cluster stays in
-  four pieces. Line 7 is the fix: a subtree that was not a root and whose chain returns to
-  itself is on a cycle and stays unresolved, so the cycle is grouped.
-]
-
-#step([Grouping must link roots], code: cut, focus: (9,), grid(
-  columns: 2,
-  column-gutter: 2.5em,
-  row-gutter: 0.4em,
-  diagram(
-    spacing: 3.4em, node-stroke: 0.6pt, node-shape: circle, node-inset: 3pt,
-    node((0, 0), text(9pt, $r_1$), name: <r1>), node((1, 0), text(9pt, $r_2$), name: <r2>),
-    node((0.5, 0.9), text(9pt, $r_3$), name: <r3>),
-    edge(<r1>, <r2>, "-|>"), edge(<r2>, <r3>, "-|>"),
-    edge(<r3>, <r1>, "-|>", stroke: 0.6pt + red),
-  ),
-  diagram(
-    spacing: 3.4em, node-stroke: 0.6pt, node-shape: circle, node-inset: 3pt,
-    node((0, 0), text(9pt, $r_1$), name: <s1>), node((1, 0), text(9pt, $r_2$), name: <s2>),
-    node((0.5, 0.9), text(9pt, $r_3$), name: <s3>, fill: rgb("#e3ecf7")),
-    edge(<s1>, <s2>, "-|>"), edge(<s2>, <s3>, "-|>"),
-  ),
-  text(8pt)[overwriting pointers], text(8pt)[union-find],
-))[
-  Grouping joins subtrees along their pointers. Overwriting one representative's pointer
-  with another's, without first following each to its root, can close a loop among
-  representatives (red), and the pointer jumping after grouping never ends: a run on 5
-  ranks hung this way. A union-find links only roots, so the groups stay trees with one
-  root each (shaded).
-]
-
-#step([Reading past the list], code: local, focus: (13,), diagram(
-  spacing: (2.2em, 3.2em), node-stroke: 0.6pt, node-inset: 4.5pt,
-  node((0, 0), text(9pt, $u_1$), name: <c0>), node((1, 0), text(9pt, $u_2$), name: <c1>),
-  node((2, 0), text(9pt, $u_3$), name: <c2>),
-  node((3, 0), text(8pt, fill: red)[$0$], name: <c3>, stroke: (paint: red, dash: "dashed", thickness: 0.6pt)),
-  node((1.5, -0.55), text(7.5pt)[unresolved subtrees], stroke: none),
-  node((3, -0.55), text(7.5pt, fill: red)[one past the end], stroke: none),
-  node((1.5, 1), text(8pt)[subtree of point 0], name: <z>, fill: rgb("#f6d7d2")),
-  edge(<c0>, <z>, "-|>", stroke: 0.6pt + red), edge(<c1>, <z>, "-|>", stroke: 0.6pt + red),
-  edge(<c2>, <z>, "-|>", stroke: 0.6pt + red),
-  edge(<c3>, <z>, "--|>", stroke: 0.6pt + red, text(7.5pt, fill: red)[read as the target], label-side: left),
-))[
-  The shared-memory grouping read one element past its list of unresolved subtrees. The
-  stray value was usually 0, so it formed no groups and pointed every unresolved subtree
-  at the subtree of point 0, merging them into whatever cluster point 0 was in.
-  AddressSanitizer reported the read. Only multithreaded runs reach this line, because
-  sequential in-place updates collapse cycles on their own.
-]
-
-#step([Distances exactly at $epsilon$], code: one-rank, focus: (1,), image("figures/eps-boundary.svg", width: 100%))[
-  On a unit grid with $epsilon = 1$ and $M = #ex.eps_grid.min_samples$, each interior point
-  has four neighbors at distance exactly $epsilon$. With $<=$, as in @lem:classify and in
-  scikit-learn, interior points are core (blue) and the rest border (gold) or noise. The
-  strict $<$ of the original implementation finds no core point. Grids and rounded
-  distances put many points exactly at $epsilon$.
-]
-
-#step([A finite "no edge" weight], code: local, focus: (3,), image("figures/sentinel.svg", width: 100%))[
-  The search for minimum edges starts each subtree at a "no edge yet" weight $s$ and keeps
-  only lighter edges. With a finite $s$, edges of weight $s$ or more (faint red) can never
-  be selected, and clusters fall apart, here into #ex.sentinel_pieces pieces. The original
-  $s = 10^4$ did this to data whose neighbor distances reach $10^4$, such as raw physical
-  units; here $s$ is the 60th percentile of the example's edge weights.
-]
-
-#step([A loop variable shared by threads], code: one-rank, focus: (6,), table(
-  columns: 4,
-  align: (center, left, left, center),
-  table.header[][thread A][thread B][shared $u$],
-  [1], [$u <- R[p]$], [], [$R[p]$],
-  [2], [], [$u <- R[q]$], [$R[q]$],
-  [3], [#text(fill: red)[$R[p] <- "root"(u)$]], [], [$R[q]$],
-))[
-  The loop that gives each core point its cluster used one variable $u$ for all threads.
-  Thread B can overwrite it between thread A's read and A's use, and point $p$ receives
-  the cluster of B's point $q$. Declaring $u$ inside the loop makes it private to each
-  iteration. Sanitized, slower builds hit this timing; ordinary runs rarely did.
-]
-
-#step([One writer for the output file], table(
-  columns: 3,
-  align: (center, left, left),
-  table.header[][rank 0][rank 2 (late)],
-  [1], [open, truncate], [_still computing_],
-  [2], [write $n$ labels], [],
-  [3], [], [#text(fill: red)[open, truncate]],
-))[
-  Outside the algorithm, in the command-line program: every rank opened, and so emptied,
-  the labels file, but only rank 0 wrote it. A rank that reached the open after rank 0
-  had finished left an empty file, which happened on oversubscribed CI machines. Only
-  rank 0 may open it.
-]
