@@ -5,7 +5,7 @@
   title: [kNN-DBSCAN: algorithm, distributed implementation and correctness],
   subtitle: [A technical companion to Chen, Ruys and Biros, "KNN-DBSCAN: a DBSCAN in high dimensions"],
   authors: ((name: [knndbscan project], affiliation: [github.com/Prajwal-Prathiksh/knndbscan]),),
-  date: [November 2026 · knndbscan 0.2],
+  date: [November 2026 · knndbscan 0.3],
   abstract: [
     kNN-DBSCAN replaces DBSCAN's range queries by a $k$-nearest-neighbor graph, which can
     be computed approximately and at scale in high dimensions. This companion explains the
