@@ -111,10 +111,12 @@ vector<point_int> knndbscan(const point_int N, const float eps_value,
         v = itr->second;
         label[u] = roots[v - n_start];
     }
+    // u is private to each iteration, and the map is only read: a shared u let one
+    // thread label its point with another thread's root.
 #pragma omp parallel for
     for (point_int p = 0; p < n; p++) {
-        u = R[p];
-        if (u != -1) R[p] = label[u];
+        const point_int root = R[p];
+        if (root != -1) R[p] = label.at(root);
     }
     MPI_Barrier(MPI_COMM_WORLD);
 
