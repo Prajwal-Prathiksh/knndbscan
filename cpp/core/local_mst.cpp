@@ -57,12 +57,12 @@ int local_mst(const point_int N, const point_int ISTART, const point_int* JA,
             edge_int m = i * maxk + checked[i];
             while (checked[i] < minPts - 1) {
                 point_int q = JA[m] - ISTART;
-                if ((q < 0) or
+                if ((q < 0) ||
                     (q >= N)) {  // this a cross edge, need to check the next one
                     crossE.push_back(m);
                     checked[i] += 1;
                     m += 1;
-                } else if ((R[q] > -1) and
+                } else if ((R[q] > -1) &&
                            (R[i] != R[q])) {  // this edge is internal edge connecting
                                               // two core points
                     pwrite(minE[R[i]], R[q], A[m]);
@@ -83,7 +83,7 @@ int local_mst(const point_int N, const point_int ISTART, const point_int* JA,
                 minE[i].j = i;
             } else {
                 point_int k = minE[j].j;
-                if ((i == k) and (i < j)) {
+                if ((i == k) && (i < j)) {
                     minE[i].j = i;
                 }
             }

@@ -7,6 +7,11 @@ Each release's GitHub release notes are its section below.
 
 ## [Unreleased]
 
+### Added
+
+- Prebuilt wheels for Windows on x86_64 and ARM64, for every Python from 3.10 (from 3.11
+  on ARM64, the first Python with NumPy, SciPy and scikit-learn wheels for it).
+
 ## [0.2.0] - 2026-11-13
 
 A rebuild of the package around the original SC20 implementation, with fixes to its

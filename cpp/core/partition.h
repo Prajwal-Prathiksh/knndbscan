@@ -10,7 +10,7 @@ inline int find_parent(const int i) {
     int parent = -1;
     int k = 0;
     while (parent < 0) {
-        if ((ilabels[k] <= i) and (i < ilabels[k + 1])) parent = k;
+        if ((ilabels[k] <= i) && (i < ilabels[k + 1])) parent = k;
         k += 1;
     }
     return parent;

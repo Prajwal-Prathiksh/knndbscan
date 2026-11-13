@@ -118,6 +118,10 @@ shapes how it may be changed:
 
 ## Code changes
 
+- Keep `cpp/` buildable by clang-cl on Windows, where the wheel is built (MSVC's own
+  compiler lacks OpenMP 4): no GCC extensions (variable-length arrays, `<bits/...>`
+  headers), `&&`/`||` rather than `and`/`or`, POSIX headers only in `cpp/cli/` and
+  `cpp/tests/`, and public functions marked `KNNDBSCAN_API`.
 - C++ never prints. Report through `cpp/core/log.h`: `KNN_INFO` (rank 0; one line per
   phase), `KNN_DEBUG` (rank 0; per Boruvka step) or `KNN_DEBUG_EVERY_RANK` (per-rank
   state). Never log inside a per-point or per-edge loop, or from an OpenMP parallel
