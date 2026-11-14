@@ -7,11 +7,13 @@ Each release's GitHub release notes are its section below.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-13
+
 ### Added
 
 - Prebuilt wheels for Windows on x86_64 and ARM64, for every Python from 3.10 (from 3.11
   on ARM64, the first Python with NumPy, SciPy and scikit-learn wheels for it).
-- A technical companion to the paper, [docs/report/knndbscan.pdf](docs/report/knndbscan.pdf),
+- A technical companion to the paper, [docs/report/knndbscan.pdf](https://github.com/Prajwal-Prathiksh/knndbscan/blob/v0.3.0/docs/report/knndbscan.pdf),
   which explains the method, its theorems, the distributed algorithm and how the
   implementation is verified, on one running example, without needing the paper first.
 
@@ -62,5 +64,6 @@ clustering results.
 
 - The runtime dependency on MPI, and on `matplotlib` and `pip`.
 
-[Unreleased]: https://github.com/Prajwal-Prathiksh/knndbscan/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Prajwal-Prathiksh/knndbscan/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Prajwal-Prathiksh/knndbscan/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Prajwal-Prathiksh/knndbscan/releases/tag/v0.2.0
